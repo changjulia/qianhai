@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { PlatformManagementPage, type PlatformView } from './components/platform-management';
+import { Metric, PageHeader, Tabs } from './components/shared-ui';
 
 type View = 'home' | 'projects' | 'agents' | 'approvals' | 'content' | 'schedule' | 'distribution' | 'traffic' | 'inquiries' | 'customers' | 'revenue' | 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
 type SourceView = '全部' | '人员创建' | '数字员工执行' | '待我处理';
@@ -14,25 +16,8 @@ const agents = [
   { name: '成交推进 Agent', action: '发现 2 个超期商机', unit: '客户管理', view: 'customers' as View, tone: 'red' },
 ];
 
-const viewNames: Record<View, string> = {
-  home: '首页', projects: '经营任务', agents: '执行动态', approvals: '审批与异常', content: '内容与素材', schedule: '排期与分发', distribution: '分发管理', traffic: '广告投放', inquiries: '客户经营', customers: '客户与商机', revenue: '收入归因',
-  structure: '组织架构', permissions: '权限管理', accounts: '账号管理', data: '数据管理', security: '系统与安全',
-};
-
-function Metric({ label, value, change, warn }: { label: string; value: string; change?: string; warn?: boolean }) {
-  return <article className="stat-card"><div><span>{label}</span><b>{value}</b></div>{change && <em className={warn ? 'metric-warn' : ''}>{change}</em>}</article>;
-}
-
-function PageHeader({ title, desc, action, secondary }: { title: string; desc: string; action?: string; secondary?: string }) {
-  return <div className="page-heading"><div><p className="eyebrow">黔海 · {title}</p><h1>{title}</h1><p>{desc}</p></div><div className="header-actions">{secondary && <button className="secondary">{secondary}</button>}{action && <button className="primary">＋ {action}</button>}</div></div>;
-}
-
 function AgentNote({ agent, children, action = '查看建议' }: { agent: string; children: React.ReactNode; action?: string }) {
   return <aside className="agent-note"><div className="agent-note-head"><span className="agent-spark">AI</span><div><strong>{agent}</strong><small>基于当前项目数据</small></div><i>运行中</i></div><div className="agent-note-body">{children}</div><button>{action} <span>→</span></button></aside>;
-}
-
-function Tabs({ items, active, setActive }: { items: string[]; active: string; setActive: (value: string) => void }) {
-  return <div className="tabs">{items.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => setActive(item)}>{item}</button>)}</div>;
 }
 
 function SourceSwitcher({ active, setActive }: { active: SourceView; setActive: (value: SourceView) => void }) {
@@ -263,31 +248,6 @@ function DealBoard(){const columns: Array<[string,string[]]>=[['合格线索',['
 
 function Attribution(){return <div className="attribution"><div><span>首次触点</span><b>LinkedIn 工厂品质视频</b><small>8月18日 · 自然触达</small></div><i>→</i><div><span>内容承接</span><b>英文规格书落地页</b><small>访问 3 次 · 下载 1 次</small></div><i>→</i><div><span>询盘</span><b>WhatsApp 样品咨询</b><small>8月20日 · 高意向</small></div><i>→</i><div><span>订单</span><b>SO-202608-003</b><small>成交 ¥68万</small></div></div>}
 
-function OrganizationPage({ view }: { view: View }) {
-  const [permissionTab, setPermissionTab] = useState(view === 'accounts' ? '账号连接' : '权限管理');
-  const configs: Record<View, {desc:string; metrics:string[][]}> = {
-    structure:{desc:'配置事业部、品牌、项目组及外部协作关系。',metrics:[['组织节点','12'],['事业部','3'],['品牌','6'],['成员','84']]},
-    permissions:{desc:'管理角色、数据范围、审批流程与 Agent 行动边界。',metrics:[['预置角色','8'],['权限策略','36'],['审批流程','9'],['异常权限','1']]},
-    accounts:{desc:'统一管理登录账号、社媒账号、广告账户和沟通渠道。',metrics:[['平台连接','31'],['正常','28'],['即将过期','2'],['待验证','1']]},
-    data:{desc:'管理数据源、字段映射、质量、导入导出和保留策略。',metrics:[['数据完整率','96.8%'],['数据源','18'],['待匹配询盘','14'],['同步异常','2']]},
-    security:{desc:'配置登录安全、自动化边界、审计日志和 API。',metrics:[['安全评分','92'],['MFA 覆盖','86%'],['今日审计事件','248'],['高风险动作','0']]},
-    home:{desc:'',metrics:[]},projects:{desc:'',metrics:[]},content:{desc:'',metrics:[]},traffic:{desc:'',metrics:[]},inquiries:{desc:'',metrics:[]},customers:{desc:'',metrics:[]},
-  };
-  const item=configs[view];
-  const mergedPermissionPage = view === 'permissions' || view === 'accounts';
-  return <><PageHeader title={mergedPermissionPage ? '权限与账号' : viewNames[view]} desc={mergedPermissionPage ? '统一管理成员权限、数字员工行动边界和平台账号连接。' : item.desc} action={view==='structure'?'新建组织节点':undefined}/>{mergedPermissionPage && <Tabs items={['权限管理','账号连接']} active={permissionTab} setActive={setPermissionTab}/>}<div className="stat-grid four">{item.metrics.map(m=><Metric key={m[0]} label={m[0]} value={m[1]}/>)}</div><section className="panel org-panel">{view==='structure'?<OrgTree/>:mergedPermissionPage?(permissionTab === '权限管理'?<PermissionMatrix/>:<AccountGrid/>):view==='data'?<DataManagement/>:<SecurityPage/>}</section></>;
-}
-
-function OrgTree(){return <div className="org-layout"><div className="org-tree"><h3>黔山国际产业集团</h3>{['国际增长中心','茶与食品事业部','　├ 黔绿方舟品牌','　└ 山王果品牌','工业品事业部','　└ 黔轮制造品牌','外部合作团队'].map((x,i)=><button className={i===1?'active':''} key={x}>{x}<small>{[18,32,16,11,21,13,13][i]} 人</small></button>)}</div><div className="org-detail"><span>事业部</span><h2>茶与食品事业部</h2><p>负责茶、刺梨与特色食品品牌的国内外增长项目。</p><div className="mini-metrics"><div><span>负责人</span><b>陈妍</b><small>事业部总经理</small></div><div><span>品牌</span><b>2</b><small>黔绿方舟、山王果</small></div><div><span>增长项目</span><b>5</b><small>3 个进行中</small></div></div></div></div>}
-
-function PermissionMatrix(){const roles=['集团管理员','事业部负责人','项目负责人','内容运营','内容审核','投流人员','海外销售','外部协作者']; return <div><div className="panel-title"><div><h2>角色与权限矩阵</h2><p>同时控制功能动作和组织／品牌／项目数据范围</p></div><button>编辑权限</button></div><div className="permission-table"><div className="ptr head"><span>角色</span>{['项目','内容','投流','询盘','报价订单','Agent'].map(x=><span key={x}>{x}</span>)}</div>{roles.map((r,i)=><div className="ptr" key={r}><strong>{r}</strong>{[0,1,2,3,4,5].map(j=><span key={j} className={(i+j)%4===0?'limited':''}>{(i+j)%4===0?'审批':i===7&&j>2?'—':'✓'}</span>)}</div>)}</div></div>}
-
-function AccountGrid(){return <div><div className="panel-title"><div><h2>平台与账号连接</h2><p>账号归属、可用项目、授权范围和连接状态</p></div><button>连接新账号</button></div><div className="account-grid">{[['LinkedIn','4','正常'],['Meta','6','1 个即将过期'],['Google Ads','2','正常'],['YouTube','3','正常'],['WhatsApp Business','4','正常'],['企业邮箱','12','2 个待验证']].map((a,i)=><button key={a[0]}><span className={`platform-icon p${i}`}>{a[0][0]}</span><span><strong>{a[0]}</strong><small>{a[1]} 个账号</small></span><em className={a[2]==='正常'?'good':'warn'}>{a[2]}</em></button>)}</div></div>}
-
-function DataManagement(){return <div><div className="panel-title"><div><h2>数据质量</h2><p>数据源、字段映射、导入导出和保留策略</p></div><button>立即同步</button></div><div className="data-health"><div className="health-score"><b>96.8%</b><span>整体完整率</span></div>{[['客户重复记录','27','建议合并'],['待匹配询盘','14','需要确认'],['异常渠道数据','2','正在重试'],['最近同步','3 分钟前','全部数据源']].map(x=><button key={x[0]}><span>{x[0]}</span><b>{x[1]}</b><small>{x[2]}</small></button>)}</div></div>}
-
-function SecurityPage(){return <div><div className="panel-title"><div><h2>Agent 与系统安全边界</h2><p>高风险动作必须经过人工确认</p></div><button>查看审计日志</button></div><div className="security-list">{[['市场策略 Agent','可读取项目与市场数据','不可修改预算'],['内容生产 Agent','可生成内容','发布前必须人工审核'],['分发增长 Agent','可生成投流方案','预算调整必须审批'],['询盘接待 Agent','可生成回复','价格与代理承诺禁止自动发送'],['成交推进 Agent','可创建跟进任务','不可自动报价或确认订单']].map(x=><div key={x[0]}><span className="agent-spark">AI</span><span><strong>{x[0]}</strong><small>{x[1]}</small></span><em>{x[2]}</em><button>配置</button></div>)}</div></div>}
-
 export default function Home() {
   const [view, setView] = useState<View>('home');
   const go = (next: View) => setView(next);
@@ -313,7 +273,7 @@ export default function Home() {
     </aside>
     <section className="workspace">
       <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher">切换组织⌄</button></div><div className="top-actions"><button className="search">搜索项目、内容或客户</button><button className="agent-status">AI · 6 位运行中</button><button className="notice">3</button></div></header>
-      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<OrganizationPage view={view}/>}</div>
+      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<PlatformManagementPage view={view as PlatformView}/>}</div>
     </section>
   </main>;
 }
