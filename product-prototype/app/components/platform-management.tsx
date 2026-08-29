@@ -1,375 +1,182 @@
 'use client';
 
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Metric, PageHeader, Tabs } from './shared-ui';
 import './platform-management.css';
 
 export type PlatformView = 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
-
-type DemoAction = {
-  title: string;
-  desc: string;
-  kind?: 'detail' | 'form' | 'connection' | 'permission' | 'quality' | 'audit' | 'organization' | 'import' | 'security';
-  fields?: string[];
-  confirm?: string;
-  context?: string[];
+type Row = Record<string, unknown>;
+type Snapshot = { organizationNodes: Row[]; members: Row[]; roles: Row[]; approvalChains: Row[]; integrations: Row[]; dataSources: Row[]; syncRuns: Row[]; qualityIssues: Row[]; securityPolicies: Row[]; auditEvents: Row[]; settings: Record<string, Row>; metrics: Record<string, number>; health: Row[]; generatedAt: string };
+type Action = { title: string; desc: string; kind?: 'detail'|'organization'|'permission'|'connection'|'import'|'quality'|'security'|'audit'|'chain'; operation?: string; values?: Record<string, unknown>; context?: string[]; confirm?: string };
+type Result = { ok: boolean; status?: string; message?: string; snapshot?: Snapshot; [key: string]: unknown };
+type Context = { data: Snapshot|null; loading: boolean; error: string; open: (action: Action) => void; notify: (message: string) => void; mutate: (action: string, payload?: Row) => Promise<Result> };
+const PlatformContext = createContext<Context|null>(null);
+const usePlatform = () => { const value = useContext(PlatformContext); if (!value) throw new Error('Missing PlatformContext'); return value; };
+const str = (value: unknown, fallback = '') => typeof value === 'string' ? value : value == null ? fallback : String(value);
+const num = (value: unknown) => Number(value ?? 0);
+const strings = (value: unknown): string[] => { if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string'); try { const parsed = JSON.parse(str(value, '[]')); return Array.isArray(parsed) ? parsed : []; } catch { return []; } };
+const labels: Record<string,string> = {
+  active:'启用', inactive:'停用', connected:'已连接', needs_configuration:'待配置', healthy:'正常', review_required:'待审核',
+  open:'待处理', assigned:'已分配', success:'成功', failed:'失败', high:'高', medium:'中', low:'低',
+  all:'全部数据', enterprise:'企业范围', project:'指定项目', task:'指定任务', node:'仅本节点', node_and_descendants:'本节点及下级', custom:'自定义',
+  read_only:'只读', controlled_write:'受控写入', oauth:'OAuth 授权', api_key:'API 密钥', file_exchange:'文件交换',
+  regulator:'监管机构', government_web:'政府网站', official_statistics:'官方统计', local_mock:'本地演示数据', public_fact:'公开事实', demo_mock:'演示数据',
+  crm:'客户关系管理', advertising:'广告平台', social:'社交平台', messaging:'消息平台', identity:'身份管理', storage:'素材存储', erp:'企业资源管理', account:'业务账号',
 };
+const label = (value: unknown, fallback = '') => labels[str(value)] ?? str(value, fallback);
 
-type DemoContextValue = {
-  open: (action: DemoAction) => void;
-  notify: (message: string) => void;
-};
-
-const DemoContext = createContext<DemoContextValue | null>(null);
-
-function useDemo() {
-  const context = useContext(DemoContext);
-  if (!context) throw new Error('Demo controls must be used inside DemoShell');
-  return context;
+function parseCsv(csv: string): Row[] {
+  const lines = csv.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const split = (line: string) => line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, ''));
+  const headers = split(lines[0]);
+  return lines.slice(1).map((line) => Object.fromEntries(headers.map((key, index) => [key, split(line)[index] ?? ''])));
 }
 
-function DemoShell({ children }: { children: ReactNode }) {
-  const [action, setAction] = useState<DemoAction | null>(null);
+function PlatformShell({ children }: { children: ReactNode }) {
+  const [data, setData] = useState<Snapshot|null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [step, setStep] = useState(0);
+  const [active, setActive] = useState<Action|null>(null);
+  const [form, setForm] = useState<Record<string,string>>({});
   const [choice, setChoice] = useState('');
-  const [switches, setSwitches] = useState<Record<string, boolean>>({
-    '查看': true, '编辑': true, '导出': false, '自动执行': false,
-    '敏感字段脱敏': true, '异常自动拦截': true, '强制人工审批': true,
-  });
-  const open = (nextAction: DemoAction) => {
-    setAction(nextAction);
-    setStep(0);
-    setChoice('');
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [importRows, setImportRows] = useState<Row[]>([]);
+  const [resultMessage, setResultMessage] = useState('');
+  const [switches, setSwitches] = useState({ read: true, write: true, export: false, execute: false, enabled: true });
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/platform', { cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json() as Snapshot & Result;
+        if (!response.ok || !body.ok) throw new Error(body.message || '平台数据加载失败');
+        if (!cancelled) { setData(body); setError(''); }
+      })
+      .catch((cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : '平台数据加载失败'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 3200); };
+  const mutate = async (action: string, payload: Row = {}) => {
+    const response = await fetch('/api/platform', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, payload }) });
+    const body = await response.json() as Result;
+    if (!response.ok || !body.ok) throw new Error(body.message || '服务端操作失败');
+    if (body.snapshot) setData(body.snapshot);
+    return body;
   };
-  const notify = (message: string) => {
-    setNotice(message);
-    window.setTimeout(() => setNotice(''), 2200);
+  const open = (action: Action) => {
+    setActive(action); setStep(0); setChoice(str(action.values?.choice)); setResultMessage(''); setImportRows([]);
+    const initial = Object.fromEntries(Object.entries(action.values ?? {}).map(([key, value]) => [key, str(value)]));
+    if (action.kind === 'connection' && !initial.syncScopes) initial.syncScopes = '产品与库存,客户与联系人';
+    setForm(initial);
+    const permissions = strings(action.values?.permissions);
+    setSwitches({ read: permissions.length ? permissions.some((p) => p === '*' || p.includes('read')) : true, write: permissions.some((p) => p === '*' || p.includes('manage') || p.includes('write')), export: permissions.some((p) => p === '*' || p.includes('export')), execute: permissions.some((p) => p === '*' || p.includes('execute')), enabled: action.values?.enabled !== false && num(action.values?.enabled ?? 1) !== 0 });
   };
-  const complete = (message?: string) => {
-    if (!action) return;
-    notify(message ?? `${action.title}已完成（演示数据）`);
-    setAction(null);
+  const change = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const complete = async () => {
+    if (!active?.operation) { setActive(null); return; }
+    setSaving(true);
+    try {
+      let payload: Row = { ...(active.values ?? {}), ...form };
+      if (active.kind === 'permission') payload = { ...payload, dataScope: choice || form.dataScope || 'project', permissions: [switches.read && 'resource.read', switches.write && 'resource.manage', switches.export && 'data.export', switches.execute && 'action.execute'].filter(Boolean) };
+      if (active.kind === 'connection') payload = { ...payload, syncScopes: (form.syncScopes ?? '').split(',').filter(Boolean) };
+      if (active.kind === 'quality' || active.kind === 'audit') { if (!choice) throw new Error('请先选择处置动作'); payload = { ...payload, disposition: choice }; }
+      if (active.kind === 'security') payload = { ...payload, enabled: switches.enabled };
+      if (active.kind === 'import') { if (!importRows.length) throw new Error('请选择有效的 CSV 通讯录'); payload = { ...payload, entries: importRows }; }
+      if (active.kind === 'chain') payload = { ...payload, steps: (form.steps ?? '').split(/[,，]/).map((item) => item.trim()).filter(Boolean) };
+      const result = await mutate(active.operation, payload); notify(result.message || '服务端已保存并写入审计'); setActive(null);
+    } catch (cause) { notify(cause instanceof Error ? cause.message : '操作失败'); }
+    finally { setSaving(false); }
   };
-  const toggle = (name: string) => setSwitches(current => ({ ...current, [name]: !current[name] }));
-  const kind = action?.kind ?? (action?.fields ? 'form' : 'detail');
-  const connectionSteps = ['选择连接方式', '测试连接', '设置同步范围'];
-  const renderActionBody = () => {
-    if (!action) return null;
-    if (kind === 'connection') return <div className="demo-special-body">
-      <div className="demo-steps">{connectionSteps.map((name, index) => <span className={index <= step ? 'active' : ''} key={name}><i>{index + 1}</i>{name}</span>)}</div>
-      {step === 0 && <div className="connection-methods">{[
-        ['OAuth 授权', '跳转平台登录并授权，适合广告与沟通平台'],
-        ['API 密钥', '填写企业已有接口凭证，适合 ERP／CRM'],
-        ['文件交换', '通过 SFTP 或定时文件同步，适合旧系统'],
-      ].map(item => <button className={choice === item[0] ? 'selected' : ''} key={item[0]} onClick={() => setChoice(item[0])}><strong>{item[0]}</strong><small>{item[1]}</small></button>)}</div>}
-      {step === 1 && <div className="connection-test"><label><span>测试地址</span><input defaultValue="https://demo-api.example.com/v1"/></label><div className="test-result"><span>✓</span><div><strong>演示连接可用</strong><small>响应 186 ms · 已识别 12 个业务对象 · 未写入数据</small></div></div></div>}
-      {step === 2 && <div className="sync-scope"><p>选择本连接允许同步的业务对象：</p>{['产品与库存', '客户与联系人', '商机与订单', '内容与 Campaign'].map((item, index) => <label key={item}><input type="checkbox" defaultChecked={index < 2}/><span><strong>{item}</strong><small>{index < 2 ? '读取并建立字段映射' : '暂不接入，可稍后开启'}</small></span></label>)}</div>}
-    </div>;
-    if (kind === 'permission') return <div className="demo-special-body permission-editor">
-      <div className="permission-scope-choice"><span>数据范围</span>{['本人负责', '本项目', '本节点及下级', '自定义'].map(item => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}>{item}</button>)}</div>
-      <div className="permission-switches"><h3>允许的操作</h3>{['查看', '编辑', '导出', '自动执行'].map(item => <label key={item}><span><strong>{item}</strong><small>{item === '导出' || item === '自动执行' ? '高风险能力，变更将进入审计' : '适用于已授权的数据范围'}</small></span><button className={switches[item] ? 'on' : ''} role="switch" aria-checked={switches[item]} onClick={() => toggle(item)}><i/></button></label>)}</div>
-      <div className="field-visibility"><strong>敏感字段</strong><span>联系人：部分脱敏</span><span>价格底表：不可见</span><span>收入：仅汇总</span></div>
-    </div>;
-    if (kind === 'quality') return <div className="demo-special-body quality-workbench">
-      <div className="issue-summary"><b>{action.context?.[0] ?? '14'}</b><span>条待处理记录</span><small>系统建议不会自动执行，需人工确认</small></div>
-      <h3>选择处理动作</h3><div className="issue-actions">{['接受建议', '分配负责人', '忽略并说明'].map(item => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}><strong>{item}</strong><small>{item === '接受建议' ? '按规则批量修复' : item === '分配负责人' ? '进入人工核对队列' : '保留原始数据并记录原因'}</small></button>)}</div>
-      <div className="issue-samples"><span>示例记录</span><p>QH-2026-0829 · 字段来源不一致</p><p>QH-2026-0817 · 缺少负责人</p></div>
-    </div>;
-    if (kind === 'audit') return <div className="demo-special-body audit-detail">
-      <div className="event-facts">{(action.context ?? ['策略自动识别', '风险动作已暂停', '等待负责人确认']).map((item, index) => <div key={item}><span>{['触发原因', '系统动作', '当前状态'][index] ?? '事件信息'}</span><strong>{item}</strong></div>)}</div>
-      <div className="event-timeline"><h3>处置时间线</h3><ol><li><i/>14:31 系统检测到异常请求</li><li><i/>14:31 自动拦截并保存证据</li><li className="current"><i/>现在 · 等待负责人选择处置方式</li></ol></div>
-      <div className="disposition-actions">{['确认拦截', '转交审批', '标记误报'].map(item => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}>{item}</button>)}</div>
-    </div>;
-    if (kind === 'import') return <div className="demo-special-body import-workbench">
-      <div className="import-drop"><span>⇧</span><strong>上传通讯录文件</strong><small>支持 CSV／XLSX，或选择企业微信、飞书同步</small><button onClick={() => setChoice('已选择演示文件')}>选择演示文件</button>{choice && <em>✓ {choice} · 84 位成员待预览</em>}</div>
-      <div className="import-options"><label><input type="checkbox" defaultChecked/>自动匹配部门与岗位</label><label><input type="checkbox" defaultChecked/>停用离职成员账号</label><label><input type="checkbox"/>导入后立即发送邀请</label></div>
-    </div>;
-    if (kind === 'organization') return <div className="demo-special-body organization-form">
-      <div className="org-type-picker"><span>节点类型</span>{['事业部', '品牌', '项目组', '外部协作方'].map(item => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}>{item}</button>)}</div>
-      <div className="demo-form"><label><span>组织名称</span><input defaultValue={action.context?.[0] ?? ''}/></label><label><span>上级节点</span><select defaultValue="黔山国际产业集团"><option>黔山国际产业集团</option><option>茶与食品事业部</option></select></label><label><span>负责人</span><input placeholder="选择成员"/></label><label><span>默认数据边界</span><select defaultValue="本节点及下级"><option>仅本节点</option><option>本节点及下级</option><option>指定项目</option></select></label></div>
-    </div>;
-    if (kind === 'security') return <div className="demo-special-body security-policy-editor">
-      <div className="policy-status"><span>策略状态</span><strong>当前生效</strong><small>最后更新：今天 10:20 · 集团安全管理员</small></div>
-      <div className="permission-switches">{['敏感字段脱敏', '异常自动拦截', '强制人工审批'].map(item => <label key={item}><span><strong>{item}</strong><small>{item === '强制人工审批' ? '价格、预算与外发动作必须人工确认' : '对当前组织及下级生效'}</small></span><button className={switches[item] ? 'on' : ''} role="switch" aria-checked={switches[item]} onClick={() => toggle(item)}><i/></button></label>)}</div>
-      <div className="policy-boundary"><span>适用边界</span><strong>{action.context?.[0] ?? '集团范围 · 所有数字员工'}</strong></div>
-    </div>;
-    return action.fields ? <div className="demo-form">{action.fields.map((field, index) => <label key={field}><span>{field}</span>{index === action.fields!.length - 1 && action.fields!.length > 2 ? <textarea defaultValue="演示环境中的示例配置"/> : <input defaultValue={index === 0 ? '演示方案' : ''}/>}</label>)}</div> : <div className="detail-callout"><strong>详情已加载</strong><p>{action.desc}</p></div>;
-  };
-  const nextOrComplete = () => {
-    if (!action) return;
-    if (kind === 'connection' && step < 2) {
-      if (step === 0 && !choice) { notify('请先选择一种连接方式'); return; }
-      setStep(current => current + 1);
+  const connectionNext = async () => {
+    if (!active) return;
+    if (step === 0) { if (!choice) { notify('请先选择连接方式'); return; } change('authMethod', choice === 'OAuth 授权' ? 'oauth' : choice === 'API 密钥' ? 'api_key' : 'file_exchange'); setStep(1); return; }
+    if (step === 1) {
+      setSaving(true);
+      try { const result = await mutate('integration.test', { ...(active.values ?? {}), ...form, syncScopes: (form.syncScopes ?? '').split(',').filter(Boolean) }); setActive((current) => current ? { ...current, values: { ...(current.values ?? {}), id: result.id ?? current.values?.id } } : current); setResultMessage(result.message || str(result.status)); notify(result.message || '服务端连接测试完成'); setStep(2); }
+      catch (cause) { notify(cause instanceof Error ? cause.message : '连接测试失败'); }
+      finally { setSaving(false); }
       return;
     }
-    complete();
+    await complete();
   };
-  return <DemoContext.Provider value={{ open, notify }}>
-    {children}
-    {action && <div className={`demo-overlay${kind === 'permission' ? ' drawer-mode' : ''}`} role="presentation" onMouseDown={() => setAction(null)}>
-      <section className={`demo-dialog demo-${kind}${kind === 'permission' ? ' demo-drawer' : ''}`} role="dialog" aria-modal="true" aria-labelledby="demo-dialog-title" onMouseDown={event => event.stopPropagation()}>
-        <header><div><span>{kind === 'connection' ? '连接向导' : kind === 'permission' ? '权限配置' : kind === 'quality' ? '问题处理' : kind === 'audit' ? '事件处置' : kind === 'import' ? '通讯录导入' : kind === 'organization' ? '组织配置' : kind === 'security' ? '安全策略' : '可交互 Demo'}</span><h2 id="demo-dialog-title">{action.title}</h2><p>{action.desc}</p></div><button aria-label="关闭" onClick={() => setAction(null)}>×</button></header>
-        {renderActionBody()}
-        <div className="demo-dialog-note"><strong>演示模式</strong><p>操作只改变当前浏览器里的演示状态，不会写入真实账号、客户或业务系统。</p></div>
-        <footer><button className="secondary" onClick={() => kind === 'connection' && step > 0 ? setStep(current => current - 1) : setAction(null)}>{kind === 'connection' && step > 0 ? '上一步' : '取消'}</button><button className="primary" onClick={nextOrComplete}>{kind === 'connection' && step < 2 ? (step === 0 ? '下一步：测试连接' : '下一步：同步范围') : action.confirm ?? '确认并保存'}</button></footer>
-      </section>
-    </div>}
-    {notice && <div className="demo-toast" role="status"><span>✓</span>{notice}</div>}
-  </DemoContext.Provider>;
+  const onFile = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; if (!file.name.toLowerCase().endsWith('.csv')) { notify('请提供 CSV 文件'); return; } setImportRows(parseCsv(await file.text())); change('filename', file.name); };
+
+  const kind = active?.kind ?? 'detail';
+  const body = !active ? null : kind === 'organization' ? <div className="demo-special-body organization-form"><div className="org-type-picker"><span>节点类型</span>{['事业部','品牌','项目组','外部协作方'].map((item) => <button className={form.nodeType === item ? 'selected' : ''} key={item} onClick={() => change('nodeType', item)}>{item}</button>)}</div><div className="demo-form"><label><span>组织名称</span><input value={form.name ?? ''} onChange={(e) => change('name', e.target.value)}/></label><label><span>上级节点 ID</span><input value={form.parentId ?? ''} placeholder="org-group" onChange={(e) => change('parentId', e.target.value)}/></label><label><span>负责人 ID</span><input value={form.ownerMemberId ?? ''} placeholder="member-owner" onChange={(e) => change('ownerMemberId', e.target.value)}/></label><label><span>数据边界</span><select value={form.dataBoundary ?? 'node_and_descendants'} onChange={(e) => change('dataBoundary', e.target.value)}><option value="node">仅本节点</option><option value="node_and_descendants">本节点及下级</option><option value="project">指定项目</option></select></label></div></div>
+  : kind === 'permission' ? <div className="demo-special-body permission-editor"><div className="demo-form"><label><span>角色名称</span><input value={form.name ?? ''} onChange={(e) => change('name', e.target.value)}/></label></div><div className="permission-scope-choice"><span>数据范围</span>{[['assigned','本人负责'],['project','本项目'],['node_and_descendants','本节点及下级'],['custom','自定义']].map(([value,label]) => <button className={choice === value ? 'selected' : ''} key={value} onClick={() => setChoice(value)}>{label}</button>)}</div><div className="permission-switches"><h3>允许操作</h3>{[['read','查看'],['write','编辑'],['export','导出'],['execute','自动执行']].map(([key,label]) => <label key={key}><span><strong>{label}</strong><small>{key === 'export' || key === 'execute' ? '高风险权限变更将进入审计' : '受数据范围继续约束'}</small></span><button className={switches[key as keyof typeof switches] ? 'on' : ''} role="switch" aria-checked={switches[key as keyof typeof switches]} onClick={() => setSwitches((current) => ({ ...current, [key]: !current[key as keyof typeof current] }))}><i/></button></label>)}</div></div>
+  : kind === 'connection' ? <div className="demo-special-body"><div className="demo-steps">{['选择连接方式','服务端测试','同步范围'].map((name,index) => <span className={index <= step ? 'active' : ''} key={name}><i>{index+1}</i>{name}</span>)}</div>{step === 0 && <div className="connection-methods">{[['OAuth 授权','使用服务端 OAuth 凭证引用'],['API 密钥','只填写环境变量引用名，不接收明文'],['文件交换','使用服务端文件交换凭证引用']].map(([name,desc]) => <button className={choice === name ? 'selected' : ''} key={name} onClick={() => setChoice(name)}><strong>{name}</strong><small>{desc}</small></button>)}</div>}{step === 1 && <div className="connection-test"><label><span>HTTPS 地址</span><input value={form.endpointUrl ?? ''} placeholder="https://api.example.com/health" onChange={(e) => change('endpointUrl', e.target.value)}/></label><label><span>secret_ref</span><input value={form.secretRef ?? ''} placeholder="CRM_API_TOKEN" onChange={(e) => change('secretRef', e.target.value.toUpperCase())}/></label><div className="test-result"><span>i</span><div><strong>由服务端真实测试</strong><small>环境变量未配置时返回“待配置”，不会模拟成功。</small></div></div></div>}{step === 2 && <div className="sync-scope"><p>{resultMessage || '设置同步范围'}</p>{['产品与库存','客户与联系人','商机与订单','内容与 Campaign'].map((item) => <label key={item}><input type="checkbox" checked={(form.syncScopes ?? '').split(',').includes(item)} onChange={(event) => { const current = (form.syncScopes ?? '').split(',').filter(Boolean); change('syncScopes', event.target.checked ? [...new Set([...current,item])].join(',') : current.filter((value) => value !== item).join(',')); }}/><span><strong>{item}</strong><small>写回能力需单独授权</small></span></label>)}</div>}</div>
+  : kind === 'import' ? <div className="demo-special-body import-workbench"><div className="import-drop"><span>⇧</span><strong>上传通讯录 CSV</strong><small>表头：displayName/name、roleId、nodeId、memberType，最多 500 条</small><label className="secondary">选择 CSV<input hidden type="file" accept=".csv,text/csv" onChange={(e) => void onFile(e)}/></label>{form.filename && <em>✓ {form.filename} · {importRows.length} 条</em>}</div></div>
+  : kind === 'quality' ? <div className="demo-special-body quality-workbench"><div className="issue-summary"><b>{active.context?.[0] ?? '0'}</b><span>条待处理</span><small>处置会持久化并审计</small></div><div className="issue-actions">{['接受建议','分配负责人','忽略并说明'].map((item) => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}><strong>{item}</strong></button>)}</div><div className="demo-form"><label><span>说明</span><textarea value={form.note ?? ''} onChange={(e) => change('note', e.target.value)}/></label></div></div>
+  : kind === 'security' ? <div className="demo-special-body security-policy-editor"><div className="policy-status"><span>策略状态</span><strong>{switches.enabled ? '当前生效' : '当前停用'}</strong><small>保存后即时持久化并审计</small></div><div className="permission-switches"><label><span><strong>{str(active.values?.name, active.title)}</strong><small>{active.desc}</small></span><button className={switches.enabled ? 'on' : ''} role="switch" aria-checked={switches.enabled} onClick={() => setSwitches((current) => ({ ...current, enabled: !current.enabled }))}><i/></button></label></div></div>
+  : kind === 'audit' ? <div className="demo-special-body audit-detail"><div className="event-facts">{(active.context ?? []).map((item,index) => <div key={`${item}-${index}`}><span>{['触发动作','系统结果','事件时间'][index]}</span><strong>{item}</strong></div>)}</div><div className="disposition-actions">{['确认拦截','转交审批','标记误报'].map((item) => <button className={choice === item ? 'selected' : ''} key={item} onClick={() => setChoice(item)}>{item}</button>)}</div></div>
+  : kind === 'chain' ? <div className="demo-form"><label><span>审批链名称</span><input value={form.name ?? ''} onChange={(e) => change('name', e.target.value)}/></label><label><span>适用动作</span><input value={form.appliesTo ?? ''} onChange={(e) => change('appliesTo', e.target.value)}/></label><label><span>审批步骤（逗号分隔）</span><textarea value={form.steps ?? ''} onChange={(e) => change('steps', e.target.value)}/></label></div>
+  : <div className="detail-callout"><strong>服务端数据已加载</strong><p>{active.desc}</p></div>;
+
+  return <PlatformContext.Provider value={{ data, loading, error, open, notify, mutate }}>{children}{active && <div className={`demo-overlay${kind === 'permission' ? ' drawer-mode' : ''}`} onMouseDown={() => !saving && setActive(null)}><section className={`demo-dialog demo-${kind}${kind === 'permission' ? ' demo-drawer' : ''}`} role="dialog" onMouseDown={(e) => e.stopPropagation()}><header><div><span>平台治理</span><h2>{active.title}</h2><p>{active.desc}</p></div><button disabled={saving} onClick={() => setActive(null)}>×</button></header>{body}{active.operation && <div className="demo-dialog-note"><strong>服务端持久化</strong><p>本操作会写入 D1 并记录审计；连接凭证只接受环境变量引用。</p></div>}<footer><button className="secondary" disabled={saving} onClick={() => kind === 'connection' && step > 0 ? setStep((current) => current - 1) : setActive(null)}>{kind === 'connection' && step > 0 ? '上一步' : '取消'}</button><button className="primary" disabled={saving} onClick={() => void (kind === 'connection' ? connectionNext() : complete())}>{saving ? '服务端处理中…' : kind === 'connection' && step < 2 ? (step === 0 ? '下一步：测试' : '测试真实连接') : active.confirm ?? '确认并保存'}</button></footer></section></div>}{notice && <div className="demo-toast" role="status"><span>i</span>{notice}</div>}</PlatformContext.Provider>;
 }
 
-const platformNames: Record<PlatformView, string> = {
-  structure: '组织架构',
-  permissions: '权限管理',
-  accounts: '账号管理',
-  data: '数据管理',
-  security: '系统与安全',
-};
+function download(filename: string, value: unknown) { const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
 
-export function PlatformManagementPage({ view }: { view: PlatformView }) {
-  return <DemoShell><PlatformManagementContent key={view} view={view}/></DemoShell>;
-}
+export function PlatformManagementPage({ view }: { view: PlatformView }) { return <PlatformShell><PlatformPage view={view}/></PlatformShell>; }
 
-function PlatformManagementContent({ view }: { view: PlatformView }) {
-  const mergedPermissionPage = view === 'permissions' || view === 'accounts';
+function PlatformPage({ view }: { view: PlatformView }) {
+  const { data, loading, error, open, mutate, notify } = usePlatform();
   const [permissionTab, setPermissionTab] = useState(view === 'accounts' ? '账号连接' : '角色权限');
-  const { open } = useDemo();
-  const configs: Record<PlatformView, { desc: string; metrics: string[][]; action?: string; secondary?: string }> = {
-    structure: { desc: '配置集团、事业部、品牌、项目组与外部协作边界。', metrics: [['组织节点', '12'], ['事业部', '3'], ['品牌／项目', '14'], ['跨组织协作', '4']], action: '新建组织节点', secondary: '导入通讯录' },
-    permissions: { desc: '同时管理岗位能做什么、能看什么，以及数字员工能行动到哪一步。', metrics: [['角色模板', '8'], ['数据策略', '24'], ['审批链', '9'], ['越权拦截', '3']], action: '新建角色', secondary: '权限体检' },
-    accounts: { desc: '统一管理成员账号、业务平台账号及其组织和项目归属。', metrics: [['成员账号', '84'], ['平台账号', '31'], ['即将过期', '2'], ['待验证', '1']], action: '连接账号', secondary: '账号体检' },
-    data: { desc: '兼容现有 ERP、CRM、客服、销售订单与流量系统，统一口径但不强行搬走原始数据。', metrics: [['已连接系统', '7 / 10'], ['同步成功率', '99.2%'], ['统一业务对象', '12'], ['待处理异常', '2']], action: '连接数据源', secondary: '下载接入清单' },
-    security: { desc: '定义部署方式、数据驻留、AI 可用范围、审计与异常处置。', metrics: [['安全基线', '92'], ['敏感数据本地', '100%'], ['MFA 覆盖', '86%'], ['高风险动作', '0']], action: '导出安全报告', secondary: '查看审计日志' },
+  const m = data?.metrics ?? {};
+  const pending = loading && !data;
+  const info = {
+    structure: ['组织架构','配置集团、事业部、品牌、项目组与外部协作边界。','新建组织节点','导入通讯录', [['组织节点',m.organizationNodes],['成员账号',m.members],['角色模板',m.roles],['服务端',error ? '异常' : loading ? '加载中' : '已连接']]],
+    permissions: ['权限与账号','管理岗位权限、数据范围与审批链。','新建角色','权限体检', [['角色模板',m.roles],['成员账号',m.members],['安全策略',m.policiesEnabled],['高危待处置',m.highRiskOpen]]],
+    accounts: ['权限与账号','统一管理成员账号和业务平台账号。','连接账号','账号体检', [['成员账号',m.members],['平台连接',`${m.connectedIntegrations ?? 0} / ${m.integrationsTotal ?? 0}`],['待配置',m.needsConfiguration],['服务端',error ? '异常' : '已连接']]],
+    data: ['数据管理','连接现有系统并治理统一业务对象。','连接数据源','下载接入清单', [['已连接系统',`${m.connectedIntegrations ?? 0} / ${m.integrationsTotal ?? 0}`],['同步成功率',`${m.syncSuccess ?? 0}%`],['数据源',data?.dataSources.length],['待处理记录',m.openQualityCount]]],
+    security: ['系统与安全','定义部署方式、数据驻留、AI 范围、审计与异常处置。','导出安全报告','运行安全体检', [['已启用策略',m.policiesEnabled],['高危待处置',m.highRiskOpen],['待配置连接',m.needsConfiguration],['数据库',error ? '异常' : loading ? '检查中' : '正常']]],
+  }[view] as [string,string,string,string,unknown[][]];
+  const primary = () => {
+    if (view === 'structure') open({ title: '新建组织节点', desc: '创建组织层级与默认数据边界。', kind: 'organization', operation: 'organization.save', values: { parentId: 'org-group', nodeType: '项目组', dataBoundary: 'node_and_descendants' } });
+    else if (view === 'permissions') open({ title: '新建角色', desc: '配置功能权限与数据范围。', kind: 'permission', operation: 'role.save', values: { choice: 'project' } });
+    else if (view === 'accounts' || view === 'data') open({ title: info[2], desc: '配置服务端连接和同步范围。', kind: 'connection', operation: 'integration.save', values: { integrationType: view === 'data' ? 'custom' : 'account', syncDirection: 'read_only' } });
+    else download('security-report.json', { generatedAt: data?.generatedAt, metrics: data?.metrics, policies: data?.securityPolicies, health: data?.health });
   };
-  const config = configs[view];
-  const title = mergedPermissionPage ? '权限与账号' : platformNames[view];
-  return <>
-    <PageHeader title={title} desc={config.desc} action={config.action} secondary={config.secondary} onAction={() => open({
-      title: config.action ?? '新建配置',
-      desc: `在${title}中创建一条新的演示配置。`,
-      kind: view === 'structure' ? 'organization' : view === 'permissions' ? 'permission' : view === 'accounts' || view === 'data' ? 'connection' : 'detail',
-      fields: view === 'security' ? undefined : ['名称', '所属组织', '说明'],
-    })} onSecondary={() => open({
-      title: config.secondary ?? '查看详情',
-      desc: `查看${title}的检查结果和建议。`,
-      kind: view === 'structure' ? 'import' : view === 'permissions' ? 'permission' : view === 'security' ? 'audit' : 'detail',
-      confirm: '标记为已查看',
-    })}/>
-    <div className="stat-grid four">{config.metrics.map(metric => <Metric key={metric[0]} label={metric[0]} value={metric[1]} change={metric[2]}/>)}</div>
-    {view === 'structure' ? <OrganizationManagement/> : mergedPermissionPage ? <PermissionCenter active={permissionTab} setActive={setPermissionTab}/> : view === 'data' ? <DataManagement/> : <SecurityPage/>}
-  </>;
+  const secondary = async () => {
+    if (view === 'structure') open({ title: '导入通讯录', desc: '导入成员并建立组织、角色归属。', kind: 'import', operation: 'members.import' });
+    else if (view === 'data') download('integration-checklist.json', { integrations: data?.integrations, sources: data?.dataSources });
+    else try { const result = await mutate('platform.diagnose'); notify(result.message || '体检完成'); } catch (cause) { notify(cause instanceof Error ? cause.message : '体检失败'); }
+  };
+  return <><PageHeader title={info[0]} desc={info[1]} action={info[2]} secondary={info[3]} onAction={primary} onSecondary={() => void secondary()}/>{error && <div className="integration-principle"><span>服务端异常</span><strong>{error}</strong><small>不会使用静态演示数据伪装成功</small></div>}<div className={`stat-grid four${pending ? ' is-loading' : ''}`}>{info[4].map(([metricLabel,value]) => <Metric key={str(metricLabel)} label={str(metricLabel)} value={pending ? '加载中…' : str(value,'—')}/>)}</div>{view === 'structure' ? <Organizations/> : view === 'permissions' || view === 'accounts' ? <Permissions active={permissionTab} setActive={setPermissionTab}/> : view === 'data' ? <DataCenter/> : <Security/>}</>;
 }
 
-function SectionIntro({ title, desc, action }: { title: string; desc: string; action?: string }) {
-  const { open } = useDemo();
-  const kind: DemoAction['kind'] = title.includes('组织') ? 'organization' : title.includes('权限') ? 'audit' : title.includes('数据连接') ? 'connection' : title.includes('安全') ? 'security' : 'form';
-  return <div className="panel-title platform-title"><div><h2>{title}</h2><p>{desc}</p></div>{action && <button onClick={() => open({ title: action, desc: `调整“${title}”的演示规则，保存后会显示操作反馈。`, kind, fields: kind === 'form' ? ['规则名称', '适用范围', '规则说明'] : undefined })}>{action}</button>}</div>;
+function Intro({ title, desc }: { title: string; desc: string }) { const { mutate, notify } = usePlatform(); return <div className="panel-title platform-title"><div><h2>{title}</h2><p>{desc}</p></div><button onClick={() => void mutate('platform.diagnose').then((r) => notify(r.message || '诊断完成')).catch((e: Error) => notify(e.message))}>运行体检</button></div>; }
+
+function Organizations() {
+  const { data, open, mutate, notify } = usePlatform(); const [tab,setTab] = useState('组织视图'); const [selected,setSelected] = useState('org-tea');
+  const nodes = useMemo<Array<Row & { level: number }>>(() => { const raw: Row[] = data?.organizationNodes ?? []; return raw.map((node): Row & { level: number } => { let level = 0; let parent = str(node.parent_id); const seen = new Set<string>(); while (parent && !seen.has(parent)) { seen.add(parent); const found = raw.find((item) => item.id === parent); if (!found) break; level++; parent = str(found.parent_id); } return { ...node, level }; }); }, [data?.organizationNodes]);
+  const current = nodes.find((node) => node.id === selected) ?? nodes[0]; const rules = data?.settings.organization_rules ?? {};
+  return <section className="panel org-panel platform-panel"><Intro title="组织与协作模型" desc="组织层级、成员归属和边界均由 D1 管理。"/><Tabs items={['组织视图','协作边界','组织规则']} active={tab} setActive={setTab}/>{tab === '组织视图' ? <div className="org-layout enhanced-org"><aside className="org-tree"><div className="tree-caption"><strong>组织目录</strong><small>服务端实时数据</small></div>{nodes.map((node) => <button style={{ paddingLeft: `${10 + num(node.level)*18}px` }} className={selected === node.id ? 'active' : ''} key={str(node.id)} onClick={() => setSelected(str(node.id))}><span><i className={`node-dot level-${node.level}`}/>{str(node.name)}<small>{str(node.node_type)}</small></span><em>{num(node.member_count)} 人</em></button>)}</aside>{current && <div className="org-detail org-detail-rich"><div className="detail-toolbar"><div><span>{str(current.node_type)}</span><h2>{str(current.name)}</h2><p>{str(current.description,'尚未填写说明')}</p></div><button className="secondary" onClick={() => open({ title: `编辑${current.name}`, desc: '修改组织节点并审计。', kind: 'organization', operation: 'organization.save', values: { id: current.id, name: current.name, nodeType: current.node_type, parentId: current.parent_id, ownerMemberId: current.owner_member_id, dataBoundary: current.data_boundary } })}>编辑节点</button></div><div className="mini-metrics"><div><span>成员</span><b>{num(current.member_count)}</b><small>组织归属</small></div><div><span>状态</span><b>{label(current.status)}</b><small>D1 记录</small></div><div><span>数据边界</span><b>{label(current.data_boundary)}</b><small>默认不跨组织</small></div></div></div>}</div> : tab === '协作边界' ? <div className="platform-table"><div className="platform-row head"><span>节点</span><span>类型</span><span>数据边界</span><span>父级</span><span>状态</span></div>{nodes.filter((n) => str(n.node_type).includes('外部') || n.data_boundary === 'project').map((n) => <div className="platform-row" key={str(n.id)}><span className="strong-cell">{str(n.name)}</span><span>{str(n.node_type)}</span><span>{label(n.data_boundary)}</span><span>{str(n.parent_id,'根')}</span><span className="status-good">{label(n.status)}</span></div>)}</div> : <div className="rule-grid">{[['defaultBoundary','数据默认不跨边界'],['externalLeastPrivilege','外部协作最小授权'],['revokeOnExit','离岗与项目结束回收']].map(([key,name]) => <button className="rule-card" key={key} onClick={() => void mutate('organization_rules.save',{ ...rules,[key]: rules[key] === false }).then((r) => notify(r.message || '已保存')).catch((e: Error) => notify(e.message))}><span className="rule-icon">规</span><div><strong>{name}</strong><p>开关由服务端持久化并写入审计。</p></div><em>{rules[key] === false ? '已停用' : '已启用'}</em></button>)}</div>}</section>;
 }
 
-function OrganizationManagement() {
-  const [tab, setTab] = useState('组织视图');
-  const [selected, setSelected] = useState('tea');
-  const { open } = useDemo();
-  const nodes = [
-    { id: 'group', name: '黔山国际产业集团', type: '集团', members: '84 人', level: 0 },
-    { id: 'growth', name: '国际增长中心', type: '共享中心', members: '18 人', level: 1 },
-    { id: 'tea', name: '茶与食品事业部', type: '事业部', members: '32 人', level: 1 },
-    { id: 'matcha', name: '黔绿方舟品牌', type: '品牌', members: '16 人', level: 2 },
-    { id: 'fruit', name: '山王果品牌', type: '品牌', members: '11 人', level: 2 },
-    { id: 'industry', name: '工业品事业部', type: '事业部', members: '21 人', level: 1 },
-    { id: 'partner', name: '海外渠道服务商', type: '外部协作组织', members: '7 人', level: 1 },
-  ];
-  const current = nodes.find(node => node.id === selected) ?? nodes[2];
-  return <section className="panel org-panel platform-panel">
-    <SectionIntro title="组织与协作模型" desc="组织层级可选；单一品牌可直接建项目，外部伙伴只获得被授权的数据和动作。" action="编辑组织规则"/>
-    <Tabs items={['组织视图', '协作边界', '组织规则']} active={tab} setActive={setTab}/>
-    {tab === '组织视图' ? <div className="org-layout enhanced-org">
-      <aside className="org-tree">
-        <div className="tree-caption"><strong>组织目录</strong><small>同步自企业通讯录 · 3 分钟前</small></div>
-        {nodes.map(node => <button style={{ paddingLeft: `${10 + node.level * 18}px` }} className={selected === node.id ? 'active' : ''} key={node.id} onClick={() => setSelected(node.id)}><span><i className={`node-dot level-${node.level}`}/>{node.name}<small>{node.type}</small></span><em>{node.members}</em></button>)}
-      </aside>
-      <div className="org-detail org-detail-rich">
-        <div className="detail-toolbar"><div><span>{current.type}</span><h2>{current.name}</h2><p>负责所属品牌和经营任务的目标配置、预算治理、内容增长与客户结果。</p></div><button className="secondary" onClick={() => open({ title: `编辑${current.name}`, desc: '修改组织名称、负责人和数据边界。', kind: 'organization', context: [current.name] })}>编辑节点</button></div>
-        <div className="mini-metrics"><div><span>负责人</span><b>{selected === 'partner' ? 'Nur Aisyah' : '陈妍'}</b><small>{selected === 'partner' ? '外部协作负责人' : '事业部总经理'}</small></div><div><span>经营任务</span><b>{selected === 'tea' ? '5' : '3'}</b><small>3 个运行中</small></div><div><span>数据边界</span><b>{selected === 'partner' ? '项目级' : '本节点及下级'}</b><small>默认不跨事业部</small></div></div>
-        <div className="boundary-grid"><div><span>可管理对象</span><strong>品牌、经营任务、成员与审批人</strong><small>继承集团安全基线，可向下收紧</small></div><div><span>可见业务数据</span><strong>内容、流量、客户、商机与收入</strong><small>财务成本仅负责人和集团管理员可见</small></div><div><span>已连接系统</span><strong>企业通讯录、ERP、CRM、Meta</strong><small>外部伙伴仅使用平台授权账号</small></div><div><span>数字员工边界</span><strong>内容自动 · 预算审批 · 商务禁止</strong><small>项目可在此基础上进一步限制</small></div></div>
-      </div>
-    </div> : tab === '协作边界' ? <CollaborationBoundaries/> : <OrganizationRules/>}
-  </section>;
+function Permissions({ active,setActive }: { active: string; setActive: (value: string) => void }) { return <section className="panel org-panel platform-panel"><Intro title="统一权限中心" desc="角色、数据范围、账号连接和审批链共同控制实际权限。"/><Tabs items={['角色权限','数据权限','账号连接','审批链']} active={active} setActive={setActive}/>{active === '角色权限' ? <RoleMatrix/> : active === '数据权限' ? <Scopes/> : active === '账号连接' ? <Accounts/> : <Chains/>}</section>; }
+function RoleMatrix() { const { data,open } = usePlatform(); return <div className="permission-wrap"><div className="permission-note"><span>最小权限</span><strong>变更持久化并记录高风险审计。</strong></div><div className="permission-table permission-table-wide"><div className="ptr head"><span>角色</span><span>权限数</span><span>查看</span><span>编辑</span><span>导出</span><span>执行</span><span>范围</span></div>{(data?.roles ?? []).map((role) => { const p = strings(role.permissions_json); const all = p.includes('*'); return <button className="ptr" key={str(role.id)} onClick={() => open({ title: `配置${role.name}`, desc: `当前范围：${label(role.data_scope)}`, kind: 'permission', operation: 'role.save', values: { id: role.id,name: role.name,dataScope:role.data_scope,choice:role.data_scope,permissions:p } })}><span className="role-name">{str(role.name)}</span><span>{p.length}</span><span>{all || p.some((x) => x.includes('read')) ? '允许' : '—'}</span><span>{all || p.some((x) => x.includes('manage')) ? '允许' : '—'}</span><span>{all || p.some((x) => x.includes('export')) ? '允许' : '—'}</span><span>{all || p.some((x) => x.includes('execute')) ? '允许' : '—'}</span><span>{label(role.data_scope)}</span></button>; })}</div></div>; }
+function Scopes() { const { data } = usePlatform(); return <div className="scope-list">{(data?.roles ?? []).map((role,index) => <article key={str(role.id)}><span className={`scope-icon s${index%5}`}>{index+1}</span><div><strong>{str(role.name)}</strong><small>{strings(role.permissions_json).join('、')}</small></div><p>功能权限与组织边界共同收紧实际数据范围。</p><em>{label(role.data_scope)}</em></article>)}</div>; }
+function Accounts() {
+  const { data,open } = usePlatform();
+  return <div><div className="account-summary"><span>安全连接</span><strong>只保存环境变量引用；没有真实凭证就显示待配置。</strong></div><div className="account-grid enhanced-accounts">{(data?.integrations ?? []).map((item,index) => <button key={str(item.id)} aria-label={`配置连接 ${item.name}`} onClick={() => openIntegration(open,item)}><span className={`platform-icon p${index%6}`}>{str(item.name).slice(0,1)}</span><span><strong>{str(item.name)}</strong><small>{label(item.integration_type)}</small><i>配置连接</i></span><em className={item.status === 'connected' ? 'good' : 'warn'}>{label(item.status)}</em></button>)}</div></div>;
 }
+function Chains() { const { data,open } = usePlatform(); return <div className="approval-chain-list">{(data?.approvalChains ?? []).map((item) => <article key={str(item.id)}><span className="chain-number">审</span><div><strong>{str(item.name)}</strong><small>{strings(item.steps_json).join(' → ')}</small></div><p>{str(item.applies_to)}</p><em>{str(item.sla_text)}</em><button onClick={() => open({ title:`编辑${item.name}`,desc:'调整审批链。',kind:'chain',operation:'approval_chain.save',values:{id:item.id,name:item.name,steps:strings(item.steps_json).join(','),appliesTo:item.applies_to,slaText:item.sla_text} })}>编辑</button></article>)}</div>; }
+function openIntegration(open: Context['open'], item: Row) { open({ title:`配置${item.name}`,desc:`当前状态：${item.status}`,kind:'connection',operation:'integration.save',values:{id:item.id,name:item.name,integrationType:item.integration_type,endpointUrl:item.endpoint_url,authMethod:item.auth_method,syncDirection:item.sync_direction,syncScopes:strings(item.sync_scopes_json).join(',')} }); }
 
-function CollaborationBoundaries() {
-  const { open } = useDemo();
-  const rows = [
-    ['茶与食品事业部 ↔ 国际增长中心', '内容、流量、询盘', '共同运营', '收入仅汇总可见', '正常'],
-    ['黔绿方舟 ↔ 海外渠道服务商', '已批准素材、指定客户', '项目协作', '价格底表不可见', '90 天后到期'],
-    ['工业品事业部 ↔ 外部技术顾问', '产品参数、技术询盘', '只读＋评论', '客户联系方式脱敏', '等待确认'],
-  ];
-  return <div className="platform-table"><div className="platform-row head"><span>协作关系</span><span>共享对象</span><span>协作方式</span><span>明确边界</span><span>状态</span></div>{rows.map(row => <button className="platform-row" key={row[0]} onClick={() => open({ title: row[0], desc: `当前共享：${row[1]}；数据边界：${row[3]}。`, kind: 'permission', context: [row[1], row[3]] })}>{row.map((cell, index) => <span key={cell} className={index === 0 ? 'strong-cell' : index === 4 ? (cell === '正常' ? 'status-good' : 'status-warn') : ''}>{cell}</span>)}</button>)}</div>;
-}
+function DataCenter() { const [tab,setTab] = useState('系统连接'); return <section className="panel org-panel platform-panel"><Intro title="数据连接与治理" desc="连接、同步、质量处置和访问记录都来自服务端。"/><Tabs items={['系统连接','字段与主数据','数据质量','访问记录']} active={tab} setActive={setTab}/>{tab === '系统连接' ? <Integrations/> : tab === '字段与主数据' ? <Sources/> : tab === '数据质量' ? <Quality/> : <AuditTable/>}</section>; }
+function Integrations() { const { data,open,mutate,notify } = usePlatform(); return <><div className="integration-principle"><span>真实连接</span><strong>测试与同步由服务端执行，缺少凭证不返回成功。</strong><small>明文凭证会被 API 拒绝</small></div><div className="integration-table"><div className="integration-row head"><span>系统</span><span>范围</span><span>方式</span><span>方向</span><span>状态</span><span>操作</span></div>{(data?.integrations ?? []).map((item) => <div className="integration-row" key={str(item.id)}><span><i className="system-cube">系</i><strong>{str(item.name)}</strong></span><span>{strings(item.scopes_json).join('、') || '待定义'}</span><span>{label(item.auth_method,'待配置')}</span><span>{label(item.sync_direction,'只读')}</span><span className={item.status === 'connected' ? 'status-good' : 'status-warn'}>{label(item.status)}</span><span><button onClick={() => openIntegration(open,item)}>配置</button><button onClick={() => void mutate('sync.run',{integrationId:item.id}).then((r) => notify(r.message || '同步已提交')).catch((e: Error) => notify(e.message))}>同步</button></span></div>)}</div></>; }
+function Sources() { const { data } = usePlatform(); return <div className="master-layout"><div className="master-flow"><span>源系统</span><i>→</i><span>字段映射</span><i>→</i><span>统一对象</span><i>→</i><span>权限与归因</span></div><div className="platform-table master-table"><div className="platform-row head"><span>数据源</span><span>类型</span><span>分类</span><span>最近同步</span><span>状态</span></div>{(data?.dataSources ?? []).map((item) => <div className="platform-row" key={str(item.id)}><span className="strong-cell">{str(item.name)}</span><span>{label(item.source_type)}</span><span>{label(item.classification)}</span><span>{str(item.last_synced_at,'尚未同步')}</span><span className={item.status === 'healthy' ? 'status-good' : 'status-warn'}>{label(item.status)}</span></div>)}</div></div>; }
+function Quality() { const { data,open } = usePlatform(); const issues = data?.qualityIssues ?? []; const count = issues.filter((i) => i.status === 'open' || i.status === 'assigned').reduce((sum,i) => sum+num(i.affected_count),0); return <div className="data-quality-layout"><div className="health-score large"><b>{count}</b><span>条待处理</span><small>服务端质量队列</small></div><div className="quality-cards">{issues.map((item) => <button key={str(item.id)} onClick={() => open({title:`处理${item.issue_type}`,desc:`建议：${item.recommendation}`,kind:'quality',operation:'quality.resolve',values:{id:item.id},context:[str(item.affected_count)]})}><span>{str(item.issue_type)}</span><b>{num(item.affected_count)}</b><small>{str(item.recommendation)}</small><em>{label(item.status)}</em></button>)}</div></div>; }
+function AuditTable() { const { data,open } = usePlatform(); return <div className="platform-table access-table"><div className="platform-row head"><span>时间</span><span>主体</span><span>动作</span><span>资源</span><span>结果</span></div>{(data?.auditEvents ?? []).map((item) => <button className="platform-row" key={str(item.id)} onClick={() => open({title:str(item.action),desc:`资源：${item.resource_type}`,kind:item.risk_level === 'high' ? 'audit':'detail',operation:item.risk_level === 'high' ? 'audit.resolve':undefined,values:{eventId:item.id},context:[str(item.action),str(item.result),str(item.occurred_at)]})}><span>{str(item.occurred_at).replace('T',' ').slice(0,16)}</span><span>{str(item.actor_id,str(item.actor_type))}</span><span>{str(item.action)}</span><span>{str(item.resource_type)}</span><span className={item.result === 'success' ? 'status-good':'status-danger'}>{label(item.result)}</span></button>)}</div>; }
 
-function OrganizationRules() {
-  const { notify } = useDemo();
-  return <div className="rule-grid">{[
-    ['层级不是必填链条', '集团可以使用事业部和品牌层；单一企业可直接创建经营任务。', '已启用'],
-    ['数据默认不跨边界', '成员默认只能看所属节点与被授权项目，跨部门共享必须留痕。', '强制'],
-    ['外部协作最小授权', '服务商只获得项目期内必要数据，客户、价格与收入字段可单独屏蔽。', '强制'],
-    ['离岗与项目结束回收', '通讯录停用或项目结束后自动冻结账号并撤销令牌。', '24 小时内'],
-  ].map(rule => <button className="rule-card" key={rule[0]} onClick={() => notify(`“${rule[0]}”规则已启用（演示）`)}><span className="rule-icon">规</span><div><strong>{rule[0]}</strong><p>{rule[1]}</p></div><em>{rule[2]}</em></button>)}</div>;
-}
-
-function PermissionCenter({ active, setActive }: { active: string; setActive: (value: string) => void }) {
-  return <section className="panel org-panel platform-panel">
-    <SectionIntro title="统一权限中心" desc="功能权限、数据范围、平台账号和审批链共同决定一个人或数字员工能看到什么、能执行什么。" action="权限变更记录"/>
-    <Tabs items={['角色权限', '数据权限', '账号连接', '审批链']} active={active} setActive={setActive}/>
-    {active === '角色权限' ? <PermissionMatrix/> : active === '数据权限' ? <DataScopeMatrix/> : active === '账号连接' ? <AccountGrid/> : <ApprovalChains/>}
-  </section>;
-}
-
-function PermissionMatrix() {
-  const { open } = useDemo();
-  const rows = [
-    ['集团管理员', '管理', '管理', '审批', '查看', '查看', '本组织全部'],
-    ['事业部负责人', '管理', '审批', '审批', '管理', '查看', '本节点及下级'],
-    ['项目负责人', '管理', '管理', '申请', '管理', '查看', '指定项目'],
-    ['内容运营', '查看', '编辑', '—', '脱敏', '—', '指定品牌／项目'],
-    ['投流人员', '查看', '查看', '编辑', '脱敏', '汇总', '指定广告账户'],
-    ['海外销售', '查看', '查看', '—', '管理', '查看', '分配客户／商机'],
-    ['外部协作者', '—', '协作', '—', '脱敏', '—', '限时共享对象'],
-  ];
-  return <div className="permission-wrap"><div className="permission-note"><span>最小权限原则</span><strong>角色模板定义上限，组织、项目和字段策略继续收紧；越权访问自动拦截并写入审计。</strong></div><div className="permission-table permission-table-wide"><div className="ptr head"><span>角色</span>{['经营任务', '内容', '投流', '客户', '收入', '数据范围'].map(item => <span key={item}>{item}</span>)}</div>{rows.map(row => <button className="ptr" key={row[0]} onClick={() => open({ title: `配置${row[0]}`, desc: `当前数据范围：${row[6]}。可以在演示中调整功能权限和字段可见性。`, kind: 'permission', context: [row[6]] })}>{row.map((cell, index) => <span key={`${row[0]}-${index}`} className={index === 0 ? 'role-name' : cell === '—' ? 'permission-none' : cell === '审批' || cell === '申请' || cell === '脱敏' ? 'limited' : ''}>{cell}</span>)}</button>)}</div></div>;
-}
-
-function DataScopeMatrix() {
-  const { open } = useDemo();
-  const domains = [
-    ['内容与素材', '产品事实、素材、审核记录', '内容运营可编辑；外部伙伴仅看已批准版本', '项目／品牌'],
-    ['流量与广告', '受众、消耗、Campaign、转化', '投流人员可编辑；负责人看汇总与预算', '广告账户／项目'],
-    ['客服与询盘', '会话、联系人、意向、跟进', '销售看分配客户；运营默认脱敏', '客户／商机'],
-    ['销售与订单', '报价、订单、回款、履约', '销售与负责人可见；内容团队不可见', '事业部／项目'],
-    ['财务与收入', '成本、毛利、归因收入', '集团和事业部负责人可见，其他角色仅汇总', '字段级'],
-  ];
-  return <div className="scope-list">{domains.map((domain, index) => <article key={domain[0]}><span className={`scope-icon s${index}`}>{index + 1}</span><div><strong>{domain[0]}</strong><small>{domain[1]}</small></div><p>{domain[2]}</p><em>{domain[3]}</em><button onClick={() => open({ title: `配置${domain[0]}权限`, desc: domain[2], kind: 'permission', context: [domain[3]] })}>配置</button></article>)}</div>;
-}
-
-function AccountGrid() {
-  const { open } = useDemo();
-  const accounts = [
-    ['企业身份与 SSO', '84 个成员账号', '集团全域', '正常', '身'],
-    ['LinkedIn', '4 个主页／广告账户', '3 个经营任务', '正常', 'in'],
-    ['Meta', '6 个主页／广告账户', '茶与食品事业部', '1 个即将过期', 'M'],
-    ['Google Ads', '2 个广告账户', '国际增长中心', '正常', 'G'],
-    ['WhatsApp Business', '4 个号码', '客户经营团队', '正常', 'W'],
-    ['企业邮箱', '12 个邮箱', '按成员分配', '2 个待验证', '@'],
-  ];
-  return <div><div className="account-summary"><span>账号使用规则</span><strong>个人身份、平台账号与数据范围分开授权；数字员工只能使用绑定到经营任务的账号。</strong><button onClick={() => open({ title: '连接新账号', desc: '选择平台并完成授权范围确认。', kind: 'connection', confirm: '完成连接' })}>连接新账号</button></div><div className="account-grid enhanced-accounts">{accounts.map((account, index) => <button key={account[0]} onClick={() => open({ title: `管理${account[0]}`, desc: `${account[1]}；当前范围：${account[2]}；状态：${account[3]}。`, kind: 'connection', confirm: '保存连接设置' })}><span className={`platform-icon p${index}`}>{account[4]}</span><span><strong>{account[0]}</strong><small>{account[1]}</small><i>{account[2]}</i></span><em className={account[3] === '正常' ? 'good' : 'warn'}>{account[3]}</em></button>)}</div></div>;
-}
-
-function ApprovalChains() {
-  const { open } = useDemo();
-  const chains = [
-    ['内容事实与认证', '内容运营 → 品牌审核人 → 质量负责人', '产品参数、认证、对比性表述', '4 小时'],
-    ['投流与预算', '项目负责人 → 事业部负责人', '超单次限额、跨渠道调配、新市场首投', '2 小时'],
-    ['价格与商务承诺', '海外销售 → 销售总监 → 法务', '报价、折扣、独家代理、交期', '必须人工'],
-    ['数据导出与外部共享', '数据负责人 → 系统管理员', '客户明细、报价、收入与个人信息', '一次一批'],
-  ];
-  return <div className="approval-chain-list">{chains.map(chain => <article key={chain[0]}><span className="chain-number">审</span><div><strong>{chain[0]}</strong><small>{chain[1]}</small></div><p>{chain[2]}</p><em>{chain[3]}</em><button onClick={() => open({ title: `编辑${chain[0]}审批链`, desc: `当前流程：${chain[1]}。`, kind: 'permission', context: [chain[2]] })}>编辑</button></article>)}</div>;
-}
-
-function DataManagement() {
-  const [tab, setTab] = useState('系统连接');
-  return <section className="panel org-panel platform-panel">
-    <SectionIntro title="数据连接与治理" desc="连接现有系统，建立客户、内容、流量、商机和收入的统一业务对象；源系统仍保留主数据责任。" action="运行连接诊断"/>
-    <Tabs items={['系统连接', '字段与主数据', '数据质量', '访问记录']} active={tab} setActive={setTab}/>
-    {tab === '系统连接' ? <IntegrationMatrix/> : tab === '字段与主数据' ? <MasterData/> : tab === '数据质量' ? <DataQuality/> : <DataAccessLog/>}
-  </section>;
-}
-
-function IntegrationMatrix() {
-  const { open } = useDemo();
-  const systems = [
-    ['现有 ERP', '产品、库存、报价、订单、回款', 'API／只读数据库／SFTP', '双向受控', '待配置'],
-    ['现有 CRM', '公司、联系人、商机、跟进', 'REST API＋Webhook', '双向', '已连接'],
-    ['广告与流量平台', 'Campaign、消耗、受众、转化', '平台 OAuth／API', '读取＋受控执行', '7 / 9 正常'],
-    ['客服与沟通渠道', '邮件、表单、WhatsApp、私信', 'Webhook＋API', '实时接入', '已连接'],
-    ['销售订单与履约', '样品、报价、合同、订单状态', 'API／批量文件', '以源系统为准', '待字段确认'],
-  ];
-  return <><div className="integration-principle"><span>兼容原则</span><strong>不要求替换现有 ERP／CRM；黔海通过连接器、字段映射和事件回传形成增长闭环。</strong><small>涉及写回、预算和商务数据的动作必须单独授权</small></div><div className="integration-table"><div className="integration-row head"><span>系统</span><span>接入数据</span><span>支持方式</span><span>同步方向</span><span>状态</span><span>操作</span></div>{systems.map(system => <div className="integration-row" key={system[0]}><span><i className="system-cube">系</i><strong>{system[0]}</strong></span><span>{system[1]}</span><span>{system[2]}</span><span>{system[3]}</span><span className={system[4] === '已连接' ? 'status-good' : 'status-warn'}>{system[4]}</span><button onClick={() => open({ title: `${system[4] === '已连接' ? '管理' : '配置'}${system[0]}`, desc: `接入数据：${system[1]}；支持方式：${system[2]}。`, kind: 'connection', confirm: system[4] === '已连接' ? '保存设置' : '完成连接' })}>{system[4] === '已连接' ? '管理' : '配置'}</button></div>)}</div></>;
-}
-
-function MasterData() {
-  const { open } = useDemo();
-  const objects = [
-    ['组织与成员', '企业通讯录／SSO', '组织 ID、岗位、负责人、状态', '每小时'],
-    ['产品与 SKU', 'ERP／企业资料库', '规格、认证、价格权限、库存', '每日＋事件'],
-    ['客户与联系人', 'CRM／客服渠道', '公司、角色、国家、同意状态', '实时'],
-    ['商机与订单', 'CRM／ERP', '阶段、金额、负责人、回款', '实时＋每日对账'],
-    ['内容与 Campaign', '黔海／平台 API', '来源、版本、渠道、预算、结果', '实时'],
-  ];
-  return <div className="master-layout"><div className="master-flow"><span>源系统</span><i>→</i><span>字段映射</span><i>→</i><span>统一业务对象</span><i>→</i><span>权限与归因</span></div><div className="platform-table master-table"><div className="platform-row head"><span>统一对象</span><span>主数据来源</span><span>关键字段</span><span>更新策略</span><span>状态</span></div>{objects.map(object => <button className="platform-row" key={object[0]} onClick={() => open({ title: `查看${object[0]}映射`, desc: `主数据来源：${object[1]}；更新策略：${object[3]}。`, kind: 'detail', confirm: '关闭详情' })}>{object.map((cell, index) => <span key={cell} className={index === 0 ? 'strong-cell' : ''}>{cell}</span>)}<span className="status-good">已定义</span></button>)}</div></div>;
-}
-
-function DataQuality() {
-  const { open } = useDemo();
-  return <div className="data-quality-layout"><div className="health-score large"><b>96.8%</b><span>整体完整率</span><small>较上周 +1.2%</small></div><div className="quality-cards">{[['重复客户记录', '27', '建议合并', '客户主数据'], ['待匹配询盘', '14', '需要确认', '客服渠道'], ['异常渠道数据', '2', '正在重试', 'Meta'], ['缺少同意状态', '8', '禁止自动外发', '联系人']].map(item => <button key={item[0]} onClick={() => open({ title: `处理${item[0]}`, desc: `${item[3]}发现 ${item[1]} 条问题，系统建议：${item[2]}。`, kind: 'quality', context: [item[1], item[2], item[3]], confirm: '确认处理动作' })}><span>{item[0]}</span><b>{item[1]}</b><small>{item[2]}</small><em>{item[3]}</em></button>)}</div></div>;
-}
-
-function DataAccessLog() {
-  const { open } = useDemo();
-  const logs = [
-    ['15:06', '王宁 · 海外销售', '查看 Lumi Ingredients 客户档案', '分配客户', '允许'],
-    ['14:52', '分发增长数字员工', '读取 Campaign 表现与预算余额', '经营任务授权', '允许'],
-    ['14:31', '外部协作者', '请求导出客户联系方式', '超出项目权限', '已拦截'],
-    ['13:48', '陈妍 · 事业部负责人', '导出项目收入汇总', '本节点及下级', '允许'],
-  ];
-  return <div className="platform-table access-table"><div className="platform-row head"><span>时间</span><span>访问主体</span><span>数据动作</span><span>权限依据</span><span>结果</span></div>{logs.map(log => <button className="platform-row" key={`${log[0]}-${log[1]}`} onClick={() => open({ title: `${log[4]}：${log[2]}`, desc: `访问主体：${log[1]}；权限依据：${log[3]}；发生时间：${log[0]}。`, kind: log[4] === '已拦截' ? 'audit' : 'detail', context: [log[3], log[4], `${log[0]} · ${log[1]}`], confirm: '关闭详情' })}>{log.map((cell, index) => <span key={cell} className={index === 4 ? (cell === '允许' ? 'status-good' : 'status-danger') : ''}>{cell}</span>)}</button>)}</div>;
-}
-
-function SecurityPage() {
-  const [tab, setTab] = useState('部署与数据驻留');
-  return <section className="panel org-panel platform-panel">
-    <SectionIntro title="系统、安全与 AI 治理" desc="安全页不只展示开关，还要说明数据在哪里、模型能看到什么、谁批准以及出了问题如何停下。" action="安全策略体检"/>
-    <Tabs items={['部署与数据驻留', 'AI 安全', '审计与告警', '系统状态']} active={tab} setActive={setTab}/>
-    {tab === '部署与数据驻留' ? <DeploymentSecurity/> : tab === 'AI 安全' ? <AISecurity/> : tab === '审计与告警' ? <AuditAndAlerts/> : <SystemHealth/>}
-  </section>;
-}
-
-function DeploymentSecurity() {
-  const [selected, setSelected] = useState('混合部署');
-  const { notify } = useDemo();
-  const options = [
-    ['混合部署', '推荐方案', '敏感主数据与客户明细留在企业侧；云端处理获批的任务和脱敏数据。', '当前评估中'],
-    ['企业私有化部署', '最高隔离', '应用、模型网关、向量检索与审计全部运行在企业专有环境。', '支持'],
-    ['云端专属实例', '快速上线', '独立租户与加密存储；敏感字段可不出域或先脱敏。', '支持'],
-  ];
-  return <><div className="security-recommendation"><span className="agent-spark">AI</span><div><strong>Codex 建议：优先采用混合部署</strong><p>ERP、客户、报价和订单原始数据留在企业侧；黔海只读取完成任务所需的最小字段。模型调用通过统一网关，敏感字段脱敏，所有外发与写回动作可审计、可暂停。</p></div><em>方案需与客户 IT／法务确认</em></div><div className="deployment-grid">{options.map(option => <button className={selected === option[0] ? 'recommended' : ''} aria-pressed={selected === option[0]} key={option[0]} onClick={() => { setSelected(option[0]); notify(`已选择“${option[0]}”方案（演示）`); }}><span>{option[1]}</span><strong>{option[0]}</strong><p>{option[2]}</p><em>{selected === option[0] ? '✓ 已选择' : option[3]}</em></button>)}</div><div className="residency-strip"><div><span>客户与订单原始数据</span><b>企业侧</b></div><div><span>AI 任务上下文</span><b>最小字段＋脱敏</b></div><div><span>行动与审计记录</span><b>双端留痕</b></div><div><span>备份与恢复</span><b>客户定义区域</b></div></div></>;
-}
-
-function AISecurity() {
-  const { open } = useDemo();
-  const policies = [
-    ['数据最小化', '模型只收到完成当前动作必需的字段，默认屏蔽价格底表、个人联系方式与合同。', '强制'],
-    ['模型路由与驻留', '按项目选择企业本地模型、专属模型网关或获批云模型。', '按项目'],
-    ['训练与留存', '企业数据默认禁止用于第三方模型训练；请求与响应按策略脱敏留痕。', '禁止训练'],
-    ['检索与知识权限', '数字员工只能检索当前组织、品牌、项目和角色有权访问的资料。', '继承权限'],
-    ['高风险动作隔离', '价格、独家代理、预算扩张、合同与个人数据外发不得自动执行。', '人工审批'],
-  ];
-  return <div className="ai-policy-list">{policies.map((policy, index) => <article key={policy[0]}><span className="policy-index">0{index + 1}</span><div><strong>{policy[0]}</strong><p>{policy[1]}</p></div><em>{policy[2]}</em><button onClick={() => open({ title: policy[0], desc: policy[1], kind: 'security', context: [policy[2]], confirm: '保存策略' })}>查看策略</button></article>)}</div>;
-}
-
-function AuditAndAlerts() {
-  const { open } = useDemo();
-  const events = [
-    ['越权访问已拦截', '外部协作者请求导出客户联系方式', '数据权限', '高', '14:31'],
-    ['预算调整等待审批', 'LinkedIn Campaign 申请增加 12% 预算', '投流治理', '中', '13:52'],
-    ['平台授权即将过期', 'Meta 账号将在 3 天后失效', '账号安全', '中', '11:20'],
-    ['敏感字段已脱敏', '客户数据发送至云端模型前移除联系方式', 'AI 网关', '低', '10:48'],
-  ];
-  return <div className="audit-layout"><div className="audit-summary"><div><b>248</b><span>今日审计事件</span></div><div><b>3</b><span>自动拦截</span></div><div><b>7</b><span>等待审批</span></div><div><b>0</b><span>未处置高危</span></div></div><div className="platform-table audit-table"><div className="platform-row head"><span>事件</span><span>说明</span><span>策略域</span><span>级别</span><span>时间</span></div>{events.map(event => <button className="platform-row" key={event[0]} onClick={() => open({ title: event[0], desc: `${event[1]}。策略域：${event[2]}，风险级别：${event[3]}，时间：${event[4]}。`, kind: 'audit', context: [event[1], event[0].includes('拦截') ? '请求已暂停' : '已记录并通知', `${event[3]}风险 · ${event[4]}`], confirm: '确认处置' })}>{event.map((cell, index) => <span key={cell} className={index === 0 ? 'strong-cell' : index === 3 ? `risk-${cell === '高' ? 'high' : cell === '中' ? 'medium' : 'low'}` : ''}>{cell}</span>)}</button>)}</div></div>;
-}
-
-function SystemHealth() {
-  const { open } = useDemo();
-  const services = [['Web 应用与 API', '99.98%', '正常'], ['数据连接器', '99.2%', '2 个重试中'], ['模型网关', '684 ms', '正常'], ['任务与发布队列', '18 个运行中', '正常'], ['审计与日志', '无丢失', '正常'], ['备份与恢复', '最近 02:00', '已验证']];
-  return <div className="health-service-grid">{services.map((service, index) => <article key={service[0]}><span className={`service-icon service-${index}`}>●</span><div><strong>{service[0]}</strong><small>{service[1]}</small></div><em className={service[2] === '正常' || service[2] === '已验证' ? 'status-good' : 'status-warn'}>{service[2]}</em><button onClick={() => open({ title: `${service[0]}运行详情`, desc: `当前指标：${service[1]}；运行状态：${service[2]}。`, confirm: '关闭详情' })}>详情</button></article>)}</div>;
-}
+function Security() { const [tab,setTab] = useState('部署与数据驻留'); return <section className="panel org-panel platform-panel"><Intro title="系统、安全与 AI 治理" desc="部署选择、策略、审计和健康均由服务端支撑。"/><Tabs items={['部署与数据驻留','AI 安全','审计与告警','系统状态']} active={tab} setActive={setTab}/>{tab === '部署与数据驻留' ? <Deployment/> : tab === 'AI 安全' ? <Policies/> : tab === '审计与告警' ? <Alerts/> : <Health/>}</section>; }
+function Deployment() { const { data,mutate,notify } = usePlatform(); const selected = str(data?.settings.deployment?.mode,'混合部署'); const options = [['混合部署','推荐方案','敏感数据留在企业侧，云端只处理最小脱敏字段。'],['企业私有化部署','最高隔离','应用、模型网关与审计运行在专有环境。'],['云端专属实例','快速上线','独立租户和加密存储。']]; return <><div className="security-recommendation"><span className="agent-spark">AI</span><div><strong>当前部署治理：{selected}</strong><p>部署选择会写入 D1 并生成安全审计事件。</p></div></div><div className="deployment-grid">{options.map((o) => <button className={selected === o[0] ? 'recommended':''} key={o[0]} onClick={() => void mutate('deployment.save',{mode:o[0],data_residency:o[0] === '云端专属实例' ? 'dedicated_cloud':'enterprise',model_context:'minimum_masked',audit_storage:'dual'}).then((r) => notify(r.message || '已保存')).catch((e: Error) => notify(e.message))}><span>{o[1]}</span><strong>{o[0]}</strong><p>{o[2]}</p><em>{selected === o[0] ? '✓ 已持久化':'选择并保存'}</em></button>)}</div></>; }
+function Policies() { const { data,open } = usePlatform(); return <div className="ai-policy-list">{(data?.securityPolicies ?? []).map((item,index) => <article key={str(item.id)}><span className="policy-index">{String(index+1).padStart(2,'0')}</span><div><strong>{str(item.name)}</strong><p>{str(item.description)}</p></div><em>{num(item.enabled) ? str(item.enforcement_level):'已停用'}</em><button onClick={() => open({title:str(item.name),desc:str(item.description),kind:'security',operation:'security_policy.save',values:{id:item.id,name:item.name,description:item.description,policyDomain:item.policy_domain,enforcementLevel:item.enforcement_level,scope:item.scope,enabled:item.enabled}})}>配置</button></article>)}</div>; }
+function Alerts() { const { data,open } = usePlatform(); const events = data?.auditEvents ?? []; return <div className="audit-layout"><div className="audit-summary"><div><b>{events.length}</b><span>最近事件</span></div><div><b>{events.filter((e) => e.result !== 'success').length}</b><span>非成功</span></div><div><b>{events.filter((e) => e.risk_level === 'high').length}</b><span>高风险</span></div><div><b>{events.filter((e) => e.risk_level === 'high' && !e.disposition).length}</b><span>未处置高危</span></div></div><div className="platform-table audit-table"><div className="platform-row head"><span>事件</span><span>主体</span><span>资源</span><span>级别</span><span>时间</span></div>{events.map((e) => <button className="platform-row" key={str(e.id)} onClick={() => open({title:str(e.action),desc:`结果：${label(e.result)}`,kind:'audit',operation:'audit.resolve',values:{eventId:e.id},context:[str(e.action),str(e.result),str(e.occurred_at)]})}><span className="strong-cell">{str(e.action)}</span><span>{str(e.actor_id,str(e.actor_type))}</span><span>{str(e.resource_type)}</span><span className={`risk-${e.risk_level}`}>{label(e.risk_level)}</span><span>{str(e.occurred_at).replace('T',' ').slice(0,16)}</span></button>)}</div></div>; }
+function Health() { const { data } = usePlatform(); return <div className="health-service-grid">{(data?.health ?? []).map((item,index) => <article key={str(item.id)}><span className={`service-icon service-${index}`}>●</span><div><strong>{str(item.name)}</strong><small>{str(item.metric)}</small></div><em className={item.status === 'healthy' ? 'status-good':'status-warn'}>{str(item.label)}</em></article>)}</div>; }

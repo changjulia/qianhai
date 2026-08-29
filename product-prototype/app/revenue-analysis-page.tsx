@@ -1,7 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './revenue-analysis-page.css';
+import { PROJECTS } from './market-taxonomy';
+import { SUPPORTED_PLATFORMS } from './supported-platforms';
+import { requestAi } from '../lib/ai-client';
+import type { AiResult } from '../lib/ai';
 
 type Dimension = '渠道' | '内容' | 'AI Agent' | '客户经理';
 type Model = '经营贡献' | '首次触点' | '最终触点' | '线性归因';
@@ -10,15 +14,15 @@ type Order = {
   amount: number; type: string; completeness: number; path: string;
 };
 
-const orders: Order[] = [
+const demoOrders: Order[] = [
   { id: 'SO-003', customerId: 'lumi', customer: 'Lumi Ingredients', market: '马来西亚', channel: 'LinkedIn', amount: 680000, type: 'AI + 人工', completeness: 96, path: '工厂视频 → WhatsApp 询盘 → AI 跟进 → 人工报价' },
-  { id: 'SO-011', customerId: 'maya', customer: 'Maya Food', market: '新加坡', channel: 'Google', amount: 520000, type: 'AI 自主', completeness: 91, path: '搜索广告 → 规格书 → AI 资格判断 → 自动跟进' },
+  { id: 'SO-011', customerId: 'maya', customer: 'Maya Food', market: '新加坡', channel: 'Instagram', amount: 520000, type: 'AI 自主', completeness: 91, path: 'Instagram 内容 → 规格书 → AI 资格判断 → 自动跟进' },
   { id: 'SO-018', customerId: 'adrian', customer: 'Adrian Trading', market: '马来西亚', channel: 'WhatsApp', amount: 860000, type: 'AI + 人工', completeness: 100, path: '老客转介 → WhatsApp → AI 补全需求 → 人工谈判' },
   { id: 'SO-024', customerId: 'nexus', customer: 'Nexus Beverages', market: '印尼', channel: 'LinkedIn', amount: 740000, type: '纯人工', completeness: 82, path: '展会名单 → 内容触达 → 人工跟进 → 成交' },
 ];
 
 const rankings: Record<Dimension, [string, string, number, string][]> = {
-  '渠道': [['LinkedIn', '贡献 2 笔成交', 126, '+38%'], ['WhatsApp', '贡献 1 笔成交', 86, '+21%'], ['Google', '贡献 1 笔成交', 52, '+12%']],
+  '渠道': [['LinkedIn', '贡献 2 笔成交', 126, '+38%'], ['WhatsApp', '贡献 1 笔成交', 86, '+21%'], ['Instagram', '贡献 1 笔成交', 52, '+12%'], ['Facebook', '持续培育客户', 44, '+9%'], ['TikTok', '带来新增访问', 39, '+8%'], ['YouTube', '技术内容触达', 34, '+7%'], ['Telegram', '沉淀渠道社群', 28, '+5%']],
   '内容': [['工厂品质视频', '3 个高意向客户', 98, '+42%'], ['英文规格书', '5 次关键转化', 82, '+31%'], ['清真认证解读', '2 个成交客户', 55, '+17%']],
   'AI Agent': [['资格判断 Agent', '参与 68% 成交商机', 112, '+34%'], ['成交推进 Agent', '完成 21 次有效跟进', 87, '+27%'], ['询盘接待 Agent', '识别 18 个高意向', 64, '+19%']],
   '客户经理': [['陈雨晴', 'AI 协同转化率 34%', 105, '+29%'], ['王宁', '报价转化率 31%', 91, '+23%'], ['林晓群', '成交周期缩短 6 天', 68, '+15%']],
@@ -41,33 +45,42 @@ export type RevenueAnalysisPageProps = { onOpenWorkbench?: (customerId: string) 
 export function RevenueAnalysisPage({ onOpenWorkbench }: RevenueAnalysisPageProps) {
   const [dimension, setDimension] = useState<Dimension>('渠道');
   const [model, setModel] = useState<Model>('经营贡献');
-  const [filters, setFilters] = useState({ time: '本月', project: '贵州抹茶东南亚增长', market: '全部市场', channel: '全部渠道' });
+  const [filters, setFilters] = useState<{time:string;project:string;market:string;channel:string}>({ time: '本月', project: PROJECTS.matcha.name, market: '全部市场', channel: '全部渠道' });
   const [selected, setSelected] = useState<Order | null>(null);
   const [selectedEvidence, setSelectedEvidence] = useState(0);
   const [exported, setExported] = useState(false);
+  const [orders,setOrders]=useState<Order[]>([]);
+  const [pipeline,setPipeline]=useState({count:0,amount:0});
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [exporting,setExporting]=useState(false);
+  const [aiConclusion,setAiConclusion]=useState<AiResult|null>(null);
+  useEffect(()=>{let active=true;fetch('/api/revenue',{cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error();return response.json() as Promise<{orders:Order[];pipeline:{count:number;amount:number}}>}).then(result=>{if(active){setOrders(result.orders);setPipeline(result.pipeline);setError('')}}).catch(()=>{if(active){setOrders(demoOrders);setError('后端数据暂时不可用，当前显示明确标记的 Demo 数据。')}}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
+  const exportReport=async()=>{setExporting(true);setError('');try{const response=await fetch('/api/revenue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'export',filters,model})});if(!response.ok)throw new Error();setExported(true)}catch{setError('报告生成失败，请稍后重试。')}finally{setExporting(false)}};
   const factor = modelFactors[model];
   const visibleOrders = useMemo(() => orders.filter(order =>
     (filters.market === '全部市场' || order.market === filters.market) &&
     (filters.channel === '全部渠道' || order.channel === filters.channel)
-  ), [filters]);
+  ), [filters.market, filters.channel, orders]);
   const total = visibleOrders.reduce((sum, order) => sum + order.amount, 0);
   const format = (amount: number) => `¥${(amount / 10000).toFixed(0)}万`;
   const contribution = rankings[dimension].map(row => ({ ...row, value: Math.round(row[2] * factor) }));
+  useEffect(()=>{if(loading||!visibleOrders.length)return;let active=true;requestAi('revenue_analysis',{filters,model,orders:visibleOrders,pipeline,deterministic:{total,aiInfluencePercent:Math.round(62*factor),evidenceCompleteness:Math.round(visibleOrders.reduce((sum,item)=>sum+item.completeness,0)/visibleOrders.length)}}).then(result=>{if(active)setAiConclusion(result)}).catch(()=>{});return()=>{active=false}},[loading,model,filters,visibleOrders,pipeline,total,factor]);
 
   return <div className="ra-page">
-    <header className="ra-heading"><div><p>黔海 · 客户管理</p><h1>收入分析</h1><span>看清收入由什么带来，并找到值得复制的增长路径。</span></div><button onClick={() => setExported(true)}>⇩ 导出分析</button></header>
+    <header className="ra-heading"><div><p>黔海 · 客户管理</p><h1>收入分析</h1><span>{loading?'正在读取经营数据…':'看清收入由什么带来，并找到值得复制的增长路径。'}</span>{error&&<small role="alert">{error}</small>}</div><button disabled={exporting||loading} onClick={exportReport}>{exporting?'正在生成…':'⇩ 导出分析'}</button></header>
 
-    <section className="ra-conclusion"><div className="ra-ai">AI</div><div><span>本月经营结论</span><h2>成交收入 {format(total || 3820000)}，<span>{Math.round(62 * factor)}%</span> 受到数字员工直接影响。</h2><p>最佳路径是“LinkedIn 工厂内容 → WhatsApp 询盘 → AI 跟进 → 人工报价”，转化率高于平均 38%。</p></div><button onClick={() => { setDimension('内容'); document.getElementById('ra-analysis')?.scrollIntoView({ behavior: 'smooth' }); }}>查看最佳路径 →</button></section>
+    <section className="ra-conclusion"><div className="ra-ai">AI</div><div><span>本月经营结论 · {aiConclusion?.provider==='qwen'?'千问':'规则校验'}</span><h2>{aiConclusion?.headline||<>成交收入 {format(total || 3820000)}，<span>{Math.round(62 * factor)}%</span> 受到数字员工直接影响。</>}</h2><p>{aiConclusion?.summary||'正在基于当前归因证据生成经营结论…'}</p></div><button onClick={() => { setDimension('内容'); document.getElementById('ra-analysis')?.scrollIntoView({ behavior: 'smooth' }); }}>查看最佳路径 →</button></section>
 
     <section className="ra-filterbar">
       <Filter label="时间" value={filters.time} values={['本月', '近 90 天', '本季度']} onChange={v => setFilters({...filters,time:v})}/>
-      <Filter label="项目" value={filters.project} values={['贵州抹茶东南亚增长', '刺梨浓缩汁渠道增长']} onChange={v => setFilters({...filters,project:v})}/>
+      <Filter label="项目" value={filters.project} values={[PROJECTS.matcha.name, PROJECTS.rose.name]} onChange={v => setFilters({...filters,project:v})}/>
       <Filter label="市场" value={filters.market} values={['全部市场', '马来西亚', '新加坡', '印尼']} onChange={v => setFilters({...filters,market:v})}/>
-      <Filter label="渠道" value={filters.channel} values={['全部渠道', 'LinkedIn', 'WhatsApp', 'Google']} onChange={v => setFilters({...filters,channel:v})}/>
+      <Filter label="渠道" value={filters.channel} values={['全部渠道', ...SUPPORTED_PLATFORMS]} onChange={v => setFilters({...filters,channel:v})}/>
       <label className="ra-model"><span>归因模型</span><select value={model} onChange={e => setModel(e.target.value as Model)}>{(['经营贡献','首次触点','最终触点','线性归因'] as Model[]).map(v=><option key={v}>{v}</option>)}</select></label>
     </section>
 
-    <div className="ra-metrics"><Metric label="已成交收入" value={format(total)} note={`${visibleOrders.length} 笔订单`} /><Metric label="AI 影响收入" value={format(total * .62 * factor)} note={`${Math.round(62*factor)}% 的收入有 AI 参与`} accent/><Metric label="在途商机" value="¥486万" note="21 个推进中商机"/><Metric label="证据完整率" value={`${visibleOrders.length ? Math.round(visibleOrders.reduce((s,o)=>s+o.completeness,0)/visibleOrders.length) : 0}%`} note="4 笔记录建议补齐" warn/></div>
+    <div className="ra-metrics"><Metric label="已成交收入" value={format(total)} note={`${visibleOrders.length} 笔订单`} /><Metric label="AI 影响收入" value={format(total * .62 * factor)} note={`${Math.round(62*factor)}% 的收入有 AI 参与`} accent/><Metric label="在途商机" value={format(pipeline.amount)} note={`${pipeline.count} 个推进中商机`}/><Metric label="证据完整率" value={`${visibleOrders.length ? Math.round(visibleOrders.reduce((s,o)=>s+o.completeness,0)/visibleOrders.length) : 0}%`} note="基于当前订单证据计算" warn/></div>
 
     <section className="ra-card" id="ra-analysis"><div className="ra-section-head"><div><h2>什么带来了收入</h2><p>切换视角查看各经营要素的实际贡献</p></div><span>当前模型：{model}</span></div><div className="ra-tabs">{(['渠道','内容','AI Agent','客户经理'] as Dimension[]).map(v=><button className={dimension===v?'active':''} onClick={()=>setDimension(v)} key={v}>{v}</button>)}</div>
       <div className="ra-rankings">{contribution.map((row,i)=><article key={row[0]}><b>{i+1}</b><div><strong>{row[0]}</strong><small>{row[1]}</small></div><div className="ra-bar"><i style={{width:`${Math.min(row.value,126)/1.26}%`}}/></div><span>¥{row.value}万<em>{row[3]}</em></span></article>)}</div>

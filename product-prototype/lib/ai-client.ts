@@ -1,0 +1,2 @@
+import type { AiPurpose, AiResult } from './ai';
+export async function requestAi(purpose:AiPurpose,context:unknown):Promise<AiResult>{const response=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({purpose,context})});const data=await response.json() as {result?:AiResult;error?:string};if(!response.ok||!data.result)throw new Error(data.error||'AI调用失败');return data.result}

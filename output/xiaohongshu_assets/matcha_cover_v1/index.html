@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>黔海小红书组图</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 540px;
+        height: 720px;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          sans-serif;
+        background: #e9eee9;
+        color: #14231b;
+      }
+      #app {
+        width: 540px;
+        height: 720px;
+        overflow: hidden;
+      }
+      .slide {
+        position: relative;
+        width: 1080px;
+        height: 1440px;
+        overflow: hidden;
+        transform: scale(0.5);
+        transform-origin: top left;
+      }
+      .brand {
+        position: absolute;
+        right: 62px;
+        top: 48px;
+        font-size: 23px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+      .light {
+        color: #fff;
+      }
+      .eyebrow {
+        font-size: 25px;
+        font-weight: 900;
+        color: #3a8b58;
+      }
+      .photo {
+        background: #111;
+        color: #fff;
+      }
+      .photo > img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .photo:after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(10, 20, 15, 0.88),
+          rgba(10, 20, 15, 0.3) 58%,
+          rgba(10, 20, 15, 0.7)
+        );
+      }
+      .copy {
+        position: absolute;
+        z-index: 2;
+        left: 72px;
+        right: 72px;
+        top: 235px;
+      }
+      .tag {
+        display: inline-block;
+        padding: 12px 20px;
+        border-radius: 999px;
+        background: #eef7ef;
+        color: #217443;
+        font-size: 26px;
+        font-weight: 800;
+      }
+      .copy h1 {
+        font-size: 86px;
+        line-height: 1.1;
+        letter-spacing: -4px;
+        margin: 38px 0 28px;
+      }
+      .copy h1 span {
+        color: #ffcf4a;
+      }
+      .copy p {
+        font-size: 32px;
+        color: #edf4ef;
+      }
+      .screen {
+        padding: 72px 62px;
+        background: #f3f0e7;
+      }
+      .screen h1,
+      .scenario h1,
+      .loop h1 {
+        font-size: 66px;
+        line-height: 1.13;
+        letter-spacing: -3px;
+        margin: 38px 0 20px;
+      }
+      .screen h1 em,
+      .scenario h1 em,
+      .loop h1 em {
+        font-style: normal;
+        color: #d99b00;
+      }
+      .lead {
+        font-size: 27px;
+        line-height: 1.5;
+        color: #68736c;
+      }
+      .frame {
+        margin-top: 34px;
+        height: 520px;
+        background: #fff;
+        border: 9px solid #183128;
+        border-radius: 30px;
+        overflow: hidden;
+        box-shadow: 0 24px 70px rgba(25, 57, 40, 0.18);
+      }
+      .frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background: #f7f9f8;
+      }
+      .fit img {
+        object-position: center top;
+      }
+      .chat img {
+        object-position: 74% 50%;
+      }
+      .chips {
+        display: flex;
+        gap: 13px;
+        flex-wrap: wrap;
+        margin-top: 27px;
+      }
+      .chips span {
+        padding: 14px 20px;
+        border-radius: 999px;
+        background: #173128;
+        color: #fff;
+        font-size: 23px;
+        font-weight: 850;
+      }
+      .caption {
+        position: absolute;
+        left: 62px;
+        right: 62px;
+        bottom: 42px;
+        font-size: 24px;
+        color: #42534a;
+        font-weight: 750;
+      }
+      .scenario {
+        padding: 72px 62px;
+        background: #173128;
+        color: #fff;
+      }
+      .scenario .eyebrow {
+        color: #91d36a;
+      }
+      .scenario .lead {
+        color: #cbd9d0;
+      }
+      .industries {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 38px;
+      }
+      .industry {
+        height: 300px;
+        border-radius: 28px;
+        padding: 28px;
+        background: #f6f2e7;
+        color: #17261e;
+        position: relative;
+        overflow: hidden;
+      }
+      .industry b {
+        display: block;
+        font-size: 33px;
+      }
+      .industry p {
+        font-size: 23px;
+        line-height: 1.45;
+        color: #637068;
+        margin: 16px 0;
+      }
+      .industry i {
+        position: absolute;
+        right: 22px;
+        bottom: 14px;
+        font-size: 72px;
+        font-style: normal;
+        opacity: 0.78;
+      }
+      .scenario .take {
+        position: absolute;
+        left: 62px;
+        right: 62px;
+        bottom: 58px;
+        padding: 27px 30px;
+        background: #29483b;
+        border-radius: 24px;
+        font-size: 28px;
+        font-weight: 850;
+      }
+      .mock {
+        position: absolute;
+        right: 64px;
+        bottom: 25px;
+        font-size: 19px;
+        color: #a9baaf;
+      }
+      .loop {
+        padding: 72px 62px;
+        background: #eef3ed;
+      }
+      .steps {
+        display: grid;
+        gap: 16px;
+        margin-top: 35px;
+      }
+      .step {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        background: #fff;
+        border-radius: 25px;
+        padding: 25px 28px;
+        box-shadow: 0 12px 40px rgba(30, 61, 43, 0.08);
+      }
+      .step strong {
+        width: 66px;
+        height: 66px;
+        display: grid;
+        place-items: center;
+        border-radius: 18px;
+        background: #173128;
+        color: #fff;
+        font-size: 30px;
+      }
+      .step b {
+        font-size: 31px;
+      }
+      .step span {
+        display: block;
+        font-size: 22px;
+        color: #68736d;
+        margin-top: 5px;
+      }
+      .result {
+        position: absolute;
+        left: 62px;
+        right: 62px;
+        bottom: 52px;
+        padding: 27px 30px;
+        border-radius: 24px;
+        background: #f0c442;
+        color: #1c2b22;
+        font-size: 28px;
+        font-weight: 900;
+      }
+      .note {
+        font-size: 19px;
+        font-weight: 500;
+        margin-top: 8px;
+      }
+      .deep .steps { gap: 11px; margin-top: 24px; }
+      .deep .step { padding: 17px 23px; border-radius: 21px; }
+      .deep .step strong { width: 56px; height: 56px; font-size: 26px; }
+      .deep .step b { font-size: 27px; }
+      .deep .step span { font-size: 19px; }
+      .deep .result { bottom: 34px; padding: 20px 26px; font-size: 25px; }
+      .factory { padding: 72px 62px; background: #173128; color: #fff; }
+      .factory .eyebrow { color: #91d36a; }
+      .factory h1 { font-size: 68px; line-height: 1.12; letter-spacing: -3px; margin: 40px 0 20px; }
+      .factory h1 em { color: #ffcd45; font-style: normal; }
+      .factory .lead { color: #ccdad1; }
+      .factory-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 38px; }
+      .factory-card { min-height: 265px; padding: 30px; border-radius: 28px; background: #f6f2e7; color: #17261e; }
+      .factory-card b { display: block; font-size: 34px; margin-bottom: 14px; }
+      .factory-card span { font-size: 23px; line-height: 1.5; color: #637068; }
+      .factory-card.wide { grid-column: 1 / -1; min-height: 190px; background: #29483b; color: #fff; }
+      .factory-card.wide span { color: #d6e2da; }
+      .factory-flow { position: absolute; left: 62px; right: 62px; bottom: 52px; padding: 24px 28px; border-radius: 24px; background: #f0c442; color: #1d2b23; font-size: 27px; font-weight: 900; }
+      .mission-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 24px; }
+      .mission-summary div { min-height: 150px; padding: 23px 20px; border-radius: 21px; background: #173128; color: #fff; }
+      .mission-summary b { display: block; font-size: 26px; }
+      .mission-summary span { display: block; margin-top: 10px; font-size: 20px; line-height: 1.4; color: #d6e2da; }
+      .screen .caption { position: relative; left: auto; right: auto; bottom: auto; min-height: 130px; margin-top: 22px; padding: 28px 30px; border-radius: 21px; background: #e3eae4; line-height: 1.5; }
+      .intake { padding: 72px 62px; background: #173128; color: #fff; }
+      .intake .eyebrow { color: #91d36a; }
+      .intake h1 { font-size: 66px; line-height: 1.12; letter-spacing: -3px; margin: 38px 0 18px; }
+      .intake h1 em { color: #ffcd45; font-style: normal; }
+      .channel-flow { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-top: 28px; }
+      .channel-flow span { padding: 20px 10px; border-radius: 20px; background: #29483b; text-align: center; font-size: 23px; font-weight: 850; }
+      .hub { margin: 14px auto 22px; width: 500px; padding: 17px 24px; border-radius: 999px; background: #f0c442; color: #1d2b23; text-align: center; font-size: 27px; font-weight: 900; }
+      .intake-frame { height: 650px; border-radius: 28px; overflow: hidden; background: #fff; box-shadow: 0 28px 80px rgba(0,0,0,.3); }
+      .intake-frame img { width: 100%; height: 100%; object-fit: contain; }
+      .intake-foot { display: flex; justify-content: space-between; gap: 14px; margin-top: 24px; }
+      .intake-foot span { flex: 1; min-height: 84px; padding: 17px; border: 1px solid #456457; border-radius: 18px; text-align: center; font-size: 21px; font-weight: 800; }
+      .intent { padding: 72px 62px; background: #f3f0e7; }
+      .intent h1 { font-size: 65px; line-height: 1.12; letter-spacing: -3px; margin: 38px 0 20px; }
+      .intent h1 em { color: #d99b00; font-style: normal; }
+      .signal-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin: 28px 0 24px; }
+      .signal-box { min-height: 128px; padding: 20px 16px; border-radius: 20px; background: #fff; box-shadow: 0 10px 35px rgba(28,55,40,.08); }
+      .signal-box b { display: block; font-size: 25px; }
+      .signal-box span { display: block; margin-top: 8px; color: #68736d; font-size: 19px; }
+      .intent-stage { display: grid; grid-template-columns: 1fr 255px; gap: 18px; align-items: stretch; }
+      .intent-frame { height: 650px; border: 8px solid #173128; border-radius: 27px; overflow: hidden; background: #fff; }
+      .intent-frame img { width: 100%; height: 100%; object-fit: contain; }
+      .decision { display: flex; flex-direction: column; gap: 14px; }
+      .decision div { flex: 1; padding: 23px 20px; border-radius: 22px; background: #fff; }
+      .decision div:last-child { background: #173128; color: #fff; }
+      .decision b { display: block; font-size: 27px; }
+      .decision span { display: block; margin-top: 10px; font-size: 20px; line-height: 1.45; color: #6b756f; }
+      .decision div:last-child span { color: #d6e2da; }
+      .intent-foot { position: absolute; left: 62px; right: 62px; bottom: 45px; padding: 22px 26px; border-radius: 22px; background: #f0c442; font-size: 26px; font-weight: 900; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      const rawId = new URLSearchParams(location.search).get("v") || "I";
+      const id = rawId === "I" ? "I" : String(Number(rawId));
+      const slides = {
+        I: `<main class="slide photo"><img src="tea-boss-bg.png"><div class="copy"><span class="tag">贵州老板的社媒难题</span><h1>国内市场<br><span>越来越卷</span><br>海外客户怎么找？</h1><p>社媒流量越来越贵，互动却很难变成客户</p></div><div class="brand light">黔海 QIANHAI</div></main>`,
+        02: `<main class="slide screen"><div class="eyebrow">社媒运营先从经营任务开始</div><div class="brand">黔海 QIANHAI</div><h1>先定产品、国家、对象<br>再让数字员工<em>持续跑</em></h1><p class="lead">目标、预算、自主等级和动作红线确定后，内容与客户链路才开始运行。</p><div class="frame fit"><img src="real_ui/01_dashboard.png"></div><div class="chips"><span>经营任务</span><span>内容与流量</span><span>客户经营</span><span>结果归因</span></div><div class="mission-summary"><div><b>企业先确定</b><span>卖什么、去哪里、卖给谁</span></div><div><b>再设置边界</b><span>预算、周期、审批与红线</span></div><div><b>数字员工持续跑</b><span>内容、投流、承接与复盘</span></div></div><div class="caption">完整界面等比展示：同一个项目内连接社媒触达、有效询盘、活跃商机与收入结果。</div></main>`,
+        03: `<main class="slide factory"><div class="eyebrow">内容生产不再靠人一条条做</div><div class="brand light">黔海 QIANHAI</div><h1>爆款批量复制<br>数字人口播、<em>AI智能剪辑</em></h1><p class="lead">数字员工根据目标市场与平台规则，自动选择创作方法并组织完整流程。</p><div class="factory-grid"><div class="factory-card"><b>爆款结构迁移</b><span>拆解高表现内容的钩子、证明顺序和节奏，再映射到自己的产品事实。</span></div><div class="factory-card"><b>数字人口播</b><span>生成多语言口播、数字人画面和字幕，适配不同国家与社媒平台。</span></div><div class="factory-card"><b>AI智能剪辑</b><span>理解工厂、产品、认证和应用素材，自动组织镜头、节奏与CTA。</span></div><div class="factory-card"><b>自动分发投流</b><span>生成多平台规格，按排期发布，并在授权预算内做小额测试。</span></div><div class="factory-card wide"><b>不是简单“复制视频”</b><span>系统迁移的是内容结构；产品事实、素材、品牌表达与合规要求仍来自企业自己的资料。</span></div></div><div class="factory-flow">选题 → 脚本 → 口播 → 剪辑 → 审核 → 发布/投流，全流程自动帮你跑</div></main>`,
+        04: `<main class="slide intake"><div class="eyebrow">发布以后，数字员工继续工作</div><div class="brand light">黔海 QIANHAI</div><h1>四个入口<br>汇入一个<em>承接中心</em></h1><div class="channel-flow"><span>社媒评论</span><span>平台私信</span><span>邮件询盘</span><span>落地页表单</span></div><div class="hub">↓ 统一识别、记录与分配 ↓</div><div class="intake-frame"><img src="real_ui/02_customer_operations.png"></div><div class="intake-foot"><span>常规问题自动回复</span><span>低置信度暂停确认</span><span>异常与高价值事项转人工</span></div><div class="mock">完整界面等比展示 · 产品原型演示数据</div></main>`,
+        05: `<main class="slide intent"><div class="eyebrow">社媒互动要推进到真实商务</div><div class="brand">黔海 QIANHAI</div><h1>AI从一句私信里<br>拆出<em>4个采购信号</em></h1><div class="signal-row"><div class="signal-box"><b>企业身份</b><span>渠道商还是终端买家</span></div><div class="signal-box"><b>采购数量</b><span>首批需求500kg</span></div><div class="signal-box"><b>准入要求</b><span>食品级认证文件</span></div><div class="signal-box"><b>商务节点</b><span>需要正式报价</span></div></div><div class="intent-stage"><div class="intent-frame"><img src="real_ui/04_customer_profile_chat.png"></div><aside class="decision"><div><b>边界内自动做</b><span>补全资料<br>发送授权文件<br>记录下一步</span></div><div><b>触碰红线转人</b><span>正式报价<br>折扣与交期<br>代理承诺</span></div></aside></div><div class="intent-foot">关键不是“回复得快”，而是把互动推进到正确的下一步</div></main>`,
+        06: `<main class="slide scenario"><div class="eyebrow">贵州特色产业，社媒内容怎么找客户？</div><div class="brand light">黔海 QIANHAI</div><h1>不同产业<br>寻找不同<em>社媒信号</em></h1><p class="lead">不只发产品图，还要围绕渠道商真正关心的问题设计内容。</p><div class="industries"><div class="industry"><b>贵州抹茶</b><p>关注饮品配方、认证<br>互动马来西亚原料商</p><i>🍵</i></div><div class="industry"><b>贵州酱酒</b><p>关注餐饮场景、品牌故事<br>识别海外华人渠道</p><i>🍶</i></div><div class="industry"><b>山地食品</b><p>关注吃法、包装、保质期<br>识别商超与经销商</p><i>🌶️</i></div><div class="industry"><b>特色制造</b><p>关注参数、案例、产能<br>识别代理与工程采购</p><i>⚙️</i></div></div><div class="take">内容触达 → 互动识别 → 私信沟通 → 进入销售跟进</div><div class="mock">社媒场景 MOCK · 非成交案例</div></main>`,
+        07: `<main class="slide loop deep"><div class="eyebrow">黔海的社媒增长闭环</div><div class="brand">黔海 QIANHAI</div><h1>不是一个发帖工具<br>而是<em>持续运行的数字员工</em></h1><p class="lead">围绕企业设定的经营任务自主规划、执行、观察、复盘和调整。</p><div class="steps"><div class="step"><strong>1</strong><div><b>配置经营任务与边界</b><span>产品、国家、成交对象、目标、预算、自主等级、红线</span></div></div><div class="step"><strong>2</strong><div><b>选择内容策略并本地化</b><span>爆款结构迁移／产品生成／基于真实素材创作</span></div></div><div class="step"><strong>3</strong><div><b>跨平台分发与小额投流</b><span>按授权自动发布、测试受众与内容假设</span></div></div><div class="step"><strong>4</strong><div><b>提取市场与客户信号</b><span>内容反馈、互动账号、企业身份、采购角色与需求</span></div></div><div class="step"><strong>5</strong><div><b>统一承接并持续培育</b><span>评论、私信、邮件、表单；发送授权资料并记录行动</span></div></div><div class="step"><strong>6</strong><div><b>人工接管、归因与再优化</b><span>报价／代理／高价值商机转人，结果进入下一轮策略</span></div></div></div><div class="result">每次行动连接到客户、商机和收入结果<div class="note">低风险自动执行；受限动作审批；异常与高价值事项由人掌控</div></div></main>`,
+      };
+      document.getElementById("app").innerHTML = slides[id] || slides.I;
+    </script>
+  </body>
+</html>

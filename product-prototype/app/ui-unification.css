@@ -8,7 +8,7 @@ button,select,input,textarea{font-family:inherit}button{transition:border-color 
 .nav-item{height:42px;border-radius:10px;gap:11px;padding-inline:10px}.nav-mark{width:24px;height:24px}.nav-mark svg{width:18px;height:18px}.nav-section{margin-top:16px;margin-bottom:7px}.brand{padding-bottom:30px}.brand-logo{width:40px;height:40px}.sidebar-footer{padding-top:16px}.avatar{width:36px;height:36px}
 .primary,.secondary,.header-actions>button,.content-head-actions>button{min-height:40px;border-radius:10px;padding-inline:16px}.tabs button{min-height:42px;padding-inline:16px}.filter-chips button,.source-switcher button{min-height:34px;border-radius:8px}.data-table .tr,.approval-row,.responsibility-row,.permission-source{min-height:54px}.todo{min-height:58px;padding-block:12px}.agent-card,.account-grid>button{min-height:72px;padding:14px}
 input,select,textarea{font-size:14px;color:var(--ink)}
-.task-flow{overflow-x:auto}.task-columns{grid-template-columns:repeat(7,minmax(180px,1fr));min-width:1320px}.task-stage>div>button{min-height:190px}
+.task-flow{overflow-x:auto}.task-columns{grid-template-columns:repeat(8,minmax(180px,1fr));min-width:1510px}.task-stage>div>button{min-height:190px}
 html,body{overflow-x:hidden}
 
 /* Campaign header: neutral until all three business dimensions are confirmed. */

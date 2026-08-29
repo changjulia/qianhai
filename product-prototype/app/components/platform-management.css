@@ -109,3 +109,16 @@
   .security-recommendation>em{grid-column:1}
   .demo-dialog-note{grid-template-columns:1fr}
 }
+
+/* Readable platform-management type scale. */
+.platform-panel{font-size:14px}
+.platform-panel .platform-title h2{font-size:16px}
+.platform-panel .platform-title p,.platform-panel .detail-toolbar p,.platform-panel .rule-grid p,.platform-panel .scope-list p,.platform-panel .approval-chain-list p,.platform-panel .ai-policy-list p,.platform-panel .security-recommendation p,.platform-panel .deployment-grid p{font-size:13px}
+.platform-panel .tree-caption strong,.platform-panel .boundary-grid strong,.platform-panel .rule-grid strong,.platform-panel .scope-list strong,.platform-panel .approval-chain-list strong,.platform-panel .health-service-grid strong,.platform-panel .ai-policy-list strong{font-size:14px}
+.platform-panel small,.platform-panel em,.platform-panel button,.platform-panel .platform-row,.platform-panel .integration-row,.platform-panel .permission-table-wide .ptr,.platform-panel .permission-note span,.platform-panel .permission-note strong,.platform-panel .account-summary span,.platform-panel .account-summary strong,.platform-panel .integration-principle span,.platform-panel .integration-principle strong{font-size:12px}
+.platform-panel .platform-row,.platform-panel .integration-row,.platform-panel .permission-table-wide .ptr{line-height:1.45}
+.demo-dialog{font-size:14px}
+.demo-dialog header span,.demo-dialog header p,.demo-dialog label>span,.demo-dialog input,.demo-dialog textarea,.demo-dialog select,.demo-dialog button,.demo-dialog strong,.demo-dialog small,.demo-dialog p,.demo-dialog em{font-size:12px}
+.demo-dialog header h2{font-size:20px}
+.demo-toast{font-size:13px}
+.stat-grid.is-loading .stat-card b{color:#7f8a9a;font-size:14px;font-weight:600}
