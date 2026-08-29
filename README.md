@@ -157,7 +157,7 @@ npm run build
 
 - [x] GitHub 仓库已公开；
 - [x] README 已写明项目定位、技术栈、框架、运行方式和事实边界；
-- [x] GitHub Topic 设置为 `guikesong`（对应赛事要求 `#Guikesong`）；
+- [ ] GitHub Topic 设置为 `guikesong`（对应赛事要求 `#Guikesong`）；当前账号无仓库 Topic 管理权限，需仓库所有者补设；
 - [ ] 补充可直接访问的 Demo URL 或安装包链接；
 - [ ] 团队确认开源许可证；当前“代码公开可查看”不等于已经声明开源许可；
 - [ ] 由队员发布小红书项目介绍，包含产品信息、贵客松活动信息及 `#贵客松`、`#多彩贵州贵客松`；
