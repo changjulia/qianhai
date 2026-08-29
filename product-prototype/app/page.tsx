@@ -36,15 +36,10 @@ function sourceActions(source: SourceView, manualAction: string) {
 }
 
 function HomePage({ go }: { go: (view: View) => void }) {
-  const stats = [
-    ['海外精准访问', '38,420', '+18.6%'], ['新增有效询盘', '186', '+24.1%'], ['活跃商机', '42', '+8.3%'], ['预计成交金额', '¥ 286万', '+31.5%'],
-  ];
   return <>
-    <PageHeader title="上午好，黔小海" desc="关注增长结果，处理今天最重要的工作。" action="新建增长项目" />
-    <div className="stat-grid">{stats.map(s => <Metric key={s[0]} label={s[0]} value={s[1]} change={s[2]} />)}</div>
     <HomeGlobeShowcase onOpenTodo={go} />
     <section className="panel agent-panel">
-      <div className="panel-title"><div><h2>AI 协同动态</h2><p>六位 Agent 嵌入业务单元，首页只汇总结果和待确认动作</p></div><span className="live-dot">6 位在线</span></div>
+      <div className="panel-title"><div><h2>AI 协同动态</h2><p>演示数据 · 六位 Agent 嵌入业务单元，首页只汇总结果和待确认动作</p></div><span className="live-dot">模拟运行</span></div>
       <div className="agent-grid">{agents.map(agent => <button className="agent-card" key={agent.name} onClick={() => go(agent.view)}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name}</strong><small>{agent.action}</small><em>{agent.unit}</em></span><b>›</b></button>)}</div>
     </section>
   </>;

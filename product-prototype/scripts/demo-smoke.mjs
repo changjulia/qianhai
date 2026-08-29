@@ -1,11 +1,12 @@
 const endpoint = process.env.CDP_ENDPOINT ?? 'http://127.0.0.1:9333';
+const baseUrl = process.env.DEMO_URL ?? 'http://localhost:3000';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function findPage() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       const targets = await fetch(`${endpoint}/json`).then(response => response.json());
-      const page = targets.find(target => target.type === 'page' && target.url.includes('localhost:3000'))
+      const page = targets.find(target => target.type === 'page' && target.url.startsWith(baseUrl))
         ?? targets.find(target => target.type === 'page');
       if (page) return page;
     } catch {}
@@ -46,7 +47,8 @@ async function evaluate(expression) {
 }
 
 await send('Runtime.enable');
-await evaluate(`location.href = 'http://localhost:3000/#structure'`);
+await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+await evaluate(`location.href = ${JSON.stringify(`${baseUrl}/#structure`)}`);
 await sleep(700);
 const results = await evaluate(`(async () => {
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

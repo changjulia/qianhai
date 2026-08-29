@@ -2,442 +2,307 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
-import { MeshBasicMaterial } from 'three';
 import {
-  GUIZHOU_ORIGIN,
-  MARKET_REGIONS,
-  marketForCountry,
-  type GlobeFeature,
-  type MarketRegion,
-  isGlobeFeature,
-} from './home-globe-data';
+  BUSINESS_ARCS,
+  BUSINESS_NODE_BY_ID,
+  BUSINESS_NODES,
+  type BusinessArc,
+  type BusinessNode,
+} from './home-globe-business';
+import { isGlobeFeature, type GlobeFeature } from './home-globe-data';
 
 export type GlobeSceneProps = {
-  focusedMarket: MarketRegion | null;
-  activeMarket: MarketRegion | null;
   reducedMotion: boolean;
-  onCountryFocus: (countryName: string, market: MarketRegion | null) => void;
-  onMarketEnter: (countryName: string, market: MarketRegion | null) => void;
+  selectedNodeId: string | null;
+  onNodeSelect: (node: BusinessNode) => void;
   onFatalError: () => void;
 };
 
-type Size = {
-  width: number;
-  height: number;
-};
-
-type ArcDatum = {
-  startLat: number;
-  startLng: number;
-  endLat: number;
-  endLng: number;
-};
-
-type PointDatum = MarketRegion & {
-  active: boolean;
-};
-
-type LabelDatum = {
-  lat: number;
-  lng: number;
-  text: string;
-  active: boolean;
-};
-
-function getCountryName(value: object | null): string | null {
-  if (!value || !('properties' in value)) return null;
-
-  const properties = (value as { properties?: unknown }).properties;
-  if (!properties || typeof properties !== 'object' || !('name' in properties)) return null;
-
-  const name = (properties as { name?: unknown }).name;
-  return typeof name === 'string' ? name : null;
-}
+type SceneArc = BusinessArc & { startLat: number; startLng: number; endLat: number; endLng: number };
+type Size = { width: number; height: number };
 
 function parseWorldData(value: unknown): GlobeFeature[] {
   if (!value || typeof value !== 'object' || !('features' in value)) return [];
-
   const features = (value as { features?: unknown }).features;
   return Array.isArray(features) ? features.filter(isGlobeFeature) : [];
 }
 
-export default function GlobeScene({
-  focusedMarket,
-  activeMarket,
-  reducedMotion,
-  onCountryFocus,
-  onMarketEnter,
-  onFatalError,
-}: GlobeSceneProps) {
+function nodeColor(node: BusinessNode) {
+  if (node.tone === 'orange') return '#ff9b54';
+  if (node.tone === 'white') return '#fff4d6';
+  return '#52b8ff';
+}
+
+function arcColor(arc: SceneArc) {
+  if (arc.type === 'handoff') return ['rgba(255,122,55,.12)', '#ff8b47', '#ffd0a8'];
+  if (arc.type === 'signal') return ['rgba(255,245,220,.08)', '#fff0ca', '#ffffff'];
+  return ['rgba(36,128,255,.08)', '#238cff', '#8bd9ff'];
+}
+
+export default function GlobeScene({ reducedMotion, selectedNodeId, onNodeSelect, onFatalError }: GlobeSceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastCountryClickRef = useRef<{ countryName: string; at: number } | null>(null);
-  const previousMarketIdRef = useRef<string | null>(null);
-  const [size, setSize] = useState<Size>({ width: 720, height: 430 });
+  const introTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [size, setSize] = useState<Size>({ width: 760, height: 620 });
   const [features, setFeatures] = useState<GlobeFeature[]>([]);
-  const [hoveredCountry, setHoveredCountry] = useState<string | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [globeReady, setGlobeReady] = useState(false);
-  const [isIntersecting, setIsIntersecting] = useState(true);
-  const [documentVisible, setDocumentVisible] = useState(true);
-  const [autoRotateAllowed, setAutoRotateAllowed] = useState(true);
-
-  const oceanMaterial = useMemo(() => new MeshBasicMaterial({
-    color: '#10294c',
-    transparent: false,
-  }), []);
+  const [ready, setReady] = useState(false);
+  const [introStep, setIntroStep] = useState(reducedMotion ? 5 : 0);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [visible, setVisible] = useState(true);
+  const [inViewport, setInViewport] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(!reducedMotion);
+  const compact = size.width < 620;
+  const sceneActive = visible && inViewport;
 
   const clearResumeTimer = useCallback(() => {
-    if (!resumeTimerRef.current) return;
-    clearTimeout(resumeTimerRef.current);
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
     resumeTimerRef.current = null;
   }, []);
 
-  const queueAutoRotate = useCallback(() => {
+  const resumeLater = useCallback(() => {
     clearResumeTimer();
     if (reducedMotion) return;
-    resumeTimerRef.current = setTimeout(() => {
-      setAutoRotateAllowed(true);
-      resumeTimerRef.current = null;
-    }, 5000);
+    resumeTimerRef.current = setTimeout(() => setAutoRotate(true), 5200);
   }, [clearResumeTimer, reducedMotion]);
-
-  useEffect(() => () => {
-    clearResumeTimer();
-    oceanMaterial.dispose();
-  }, [clearResumeTimer, oceanMaterial]);
 
   useEffect(() => {
     const controller = new AbortController();
-
-    void fetch('/world.geojson', {
-      cache: 'force-cache',
-      signal: controller.signal,
-    })
+    void fetch('/world.geojson', { cache: 'force-cache', signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`world.geojson returned ${response.status}`);
         return response.json() as Promise<unknown>;
       })
-      .then((data) => {
-        const parsedFeatures = parseWorldData(data);
-        if (parsedFeatures.length === 0) throw new Error('world.geojson contains no valid polygon features');
-        setFeatures(parsedFeatures);
+      .then((value) => {
+        const parsed = parseWorldData(value);
+        if (!parsed.length) throw new Error('world.geojson contains no polygon features');
+        setFeatures(parsed);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        console.error('Unable to load the local globe geometry.', error);
+        console.error('Unable to load local country boundaries.', error);
         onFatalError();
       });
-
     return () => controller.abort();
   }, [onFatalError]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-
     const measure = () => {
-      const bounds = host.getBoundingClientRect();
-      const nextSize = {
-        width: Math.max(280, Math.round(bounds.width)),
-        height: Math.max(320, Math.round(bounds.height)),
-      };
-      setSize((current) => current.width === nextSize.width && current.height === nextSize.height
-        ? current
-        : nextSize);
+      const rect = host.getBoundingClientRect();
+      setSize({ width: Math.max(300, Math.round(rect.width)), height: Math.max(400, Math.round(rect.height)) });
     };
-
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(host);
-
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsIntersecting(entry.isIntersecting && entry.intersectionRatio > 0),
-      { threshold: [0, 0.02] },
-    );
+    const observer = new IntersectionObserver(([entry]) => setInViewport(entry.isIntersecting), { threshold: 0.02 });
     observer.observe(host);
-
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    const updateVisibility = () => setDocumentVisible(document.visibilityState !== 'hidden');
-    updateVisibility();
-    document.addEventListener('visibilitychange', updateVisibility);
-    return () => document.removeEventListener('visibilitychange', updateVisibility);
+    const update = () => setVisible(document.visibilityState !== 'hidden');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
   }, []);
 
-  const sceneActive = isIntersecting && documentVisible;
-  const visibleSelectedCountry = focusedMarket || activeMarket ? selectedCountry : null;
+  useEffect(() => {
+    if (reducedMotion) {
+      const frame = requestAnimationFrame(() => setIntroStep(5));
+      return () => cancelAnimationFrame(frame);
+    }
+    const frame = requestAnimationFrame(() => {
+      setIntroStep(0);
+      introTimerRef.current = setInterval(() => {
+        setIntroStep((step) => {
+          if (step >= 5) {
+            if (introTimerRef.current) clearInterval(introTimerRef.current);
+            introTimerRef.current = null;
+            return 5;
+          }
+          return step + 1;
+        });
+      }, 1050);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (introTimerRef.current) clearInterval(introTimerRef.current);
+      introTimerRef.current = null;
+    };
+  }, [reducedMotion]);
+
+  useEffect(() => () => clearResumeTimer(), [clearResumeTimer]);
 
   useEffect(() => {
-    if (!globeReady || !globeRef.current) return;
-
+    if (!ready || !globeRef.current) return;
     const globe = globeRef.current;
     const controls = globe.controls();
-    controls.autoRotate = sceneActive && autoRotateAllowed && !reducedMotion;
-
+    controls.autoRotate = sceneActive && autoRotate && !reducedMotion;
     if (sceneActive) globe.resumeAnimation();
     else globe.pauseAnimation();
-  }, [autoRotateAllowed, globeReady, reducedMotion, sceneActive]);
+  }, [autoRotate, ready, reducedMotion, sceneActive]);
 
   useEffect(() => {
-    if (!globeReady || !globeRef.current) return;
-
+    if (!ready || !globeRef.current) return;
     const controls = globeRef.current.controls();
-    const handleStart = () => {
+    const start = () => {
       clearResumeTimer();
-      setAutoRotateAllowed(false);
+      setAutoRotate(false);
       controls.autoRotate = false;
     };
-    const handleEnd = () => queueAutoRotate();
-
-    controls.addEventListener('start', handleStart);
-    controls.addEventListener('end', handleEnd);
-
+    const end = () => resumeLater();
+    controls.addEventListener('start', start);
+    controls.addEventListener('end', end);
     return () => {
-      controls.removeEventListener('start', handleStart);
-      controls.removeEventListener('end', handleEnd);
+      controls.removeEventListener('start', start);
+      controls.removeEventListener('end', end);
     };
-  }, [clearResumeTimer, globeReady, queueAutoRotate]);
+  }, [clearResumeTimer, ready, resumeLater]);
 
   useEffect(() => {
-    if (!globeReady || !globeRef.current) return;
-
-    const previousMarketId = previousMarketIdRef.current;
-    previousMarketIdRef.current = activeMarket?.id ?? null;
-    if (!activeMarket) {
-      if (previousMarketId) {
-        globeRef.current.pointOfView(
-          { lat: 18, lng: 84, altitude: 2.32 },
-          reducedMotion ? 0 : 720,
-        );
-        queueAutoRotate();
-      }
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => setAutoRotateAllowed(false));
-    globeRef.current.pointOfView(
-      { lat: activeMarket.lat, lng: activeMarket.lng, altitude: 1.48 },
-      reducedMotion ? 0 : 1120,
+    const node = selectedNodeId ? BUSINESS_NODE_BY_ID.get(selectedNodeId) : null;
+    const focus = () => globeRef.current?.pointOfView(
+      node
+        ? { lat: node.lat, lng: node.lng, altitude: compact ? 1.85 : 1.55 }
+        : { lat: 18, lng: 105, altitude: compact ? 2.18 : 1.95 },
+      node && !reducedMotion ? 950 : 0,
     );
-    queueAutoRotate();
-    return () => window.cancelAnimationFrame(frame);
-  }, [activeMarket, globeReady, queueAutoRotate, reducedMotion]);
+    const frame = requestAnimationFrame(focus);
+    const retry = setTimeout(focus, 650);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(retry);
+    };
+  }, [compact, reducedMotion, selectedNodeId]);
 
-  const pointsData = useMemo<PointDatum[]>(() => MARKET_REGIONS.map((item) => ({
-    ...item,
-    active: item.id === activeMarket?.id,
-  })), [activeMarket?.id]);
+  const visibleNodes = useMemo(
+    () => BUSINESS_NODES.filter((node) => reducedMotion || node.introStep <= introStep),
+    [introStep, reducedMotion],
+  );
 
-  const labelsData = useMemo<LabelDatum[]>(() => {
-    const labels: LabelDatum[] = [{
-      lat: GUIZHOU_ORIGIN.lat,
-      lng: GUIZHOU_ORIGIN.lng,
-      text: '贵州 · 增长起点',
-      active: false,
-    }];
+  const visibleArcs = useMemo<SceneArc[]>(() => BUSINESS_ARCS
+    .filter((arc) => reducedMotion || arc.introStep <= introStep)
+    .flatMap((arc) => {
+      const from = BUSINESS_NODE_BY_ID.get(arc.from);
+      const to = BUSINESS_NODE_BY_ID.get(arc.to);
+      return from && to ? [{ ...arc, startLat: from.lat, startLng: from.lng, endLat: to.lat, endLng: to.lng }] : [];
+    }), [introStep, reducedMotion]);
 
-    if (activeMarket) {
-      labels.push({
-        lat: activeMarket.lat,
-        lng: activeMarket.lng,
-        text: activeMarket.nameZh,
-        active: true,
-      });
-    }
+  const labels = useMemo(() => visibleNodes.filter((node) => {
+    if (node.id === selectedNodeId || node.id === hoveredNodeId) return true;
+    if (compact) return node.id === 'guizhou' || node.id === 'kuala-lumpur' || node.id === 'human-handoff';
+    return node.alwaysLabel;
+  }), [compact, hoveredNodeId, selectedNodeId, visibleNodes]);
 
-    return labels;
-  }, [activeMarket]);
+  const focusNode = useCallback((node: BusinessNode) => {
+    setAutoRotate(false);
+    onNodeSelect(node);
+    globeRef.current?.pointOfView({ lat: node.lat, lng: node.lng, altitude: compact ? 1.85 : 1.55 }, reducedMotion ? 0 : 1050);
+    resumeLater();
+  }, [compact, onNodeSelect, reducedMotion, resumeLater]);
 
-  const arcsData = useMemo<ArcDatum[]>(() => activeMarket ? [{
-    startLat: GUIZHOU_ORIGIN.lat,
-    startLng: GUIZHOU_ORIGIN.lng,
-    endLat: activeMarket.lat,
-    endLng: activeMarket.lng,
-  }] : [], [activeMarket]);
-
-  const handleGlobeReady = useCallback(() => {
+  const handleReady = useCallback(() => {
     const globe = globeRef.current;
     if (!globe) return;
-
     const controls = globe.controls();
     controls.enablePan = false;
     controls.enableDamping = true;
-    controls.dampingFactor = 0.12;
-    controls.rotateSpeed = 0.38;
-    controls.zoomSpeed = 0.58;
-    controls.autoRotateSpeed = 0.24;
-    controls.minDistance = 125;
-    controls.maxDistance = 430;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.28;
+    controls.zoomSpeed = 0.52;
+    controls.autoRotateSpeed = 0.16;
+    controls.minDistance = 122;
+    controls.maxDistance = 410;
     const renderer = globe.renderer();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
-    renderer.setClearColor('#071b3b', 1);
-    globe.pointOfView({ lat: 18, lng: 84, altitude: 2.32 }, 0);
-    setGlobeReady(true);
-  }, []);
-
-  const handlePolygonClick = useCallback((
-    polygon: object,
-    event: MouseEvent,
-    coords: { lat: number; lng: number },
-  ) => {
-    const countryName = getCountryName(polygon);
-    if (!countryName) return;
-    const market = marketForCountry(countryName);
-    const clickedAt = Number.isFinite(event.timeStamp) ? event.timeStamp : performance.now();
-    const clickTarget = market?.id ?? countryName;
-    const previousClick = lastCountryClickRef.current;
-    const isDoubleClick = event.detail >= 2 || (
-      previousClick?.countryName === clickTarget
-      && clickedAt - previousClick.at < 520
-    );
-
-    clearResumeTimer();
-    setAutoRotateAllowed(false);
-    setHoveredCountry(null);
-
-    if (isDoubleClick) {
-      lastCountryClickRef.current = null;
-      setSelectedCountry(countryName);
-      onMarketEnter(market?.nameZh ?? countryName, market);
-      globeRef.current?.pointOfView(
-        {
-          lat: market?.lat ?? coords.lat,
-          lng: market?.lng ?? coords.lng,
-          altitude: market ? 1.48 : 1.62,
-        },
-        reducedMotion ? 0 : 1200,
-      );
-      queueAutoRotate();
-      return;
-    }
-
-    lastCountryClickRef.current = { countryName: clickTarget, at: clickedAt };
-    setSelectedCountry(countryName);
-    // Keep the country under the pointer after the first click. Moving the
-    // camera here makes the second click miss and turns a double-click into
-    // an accidental orbit. This mirrors the source map's select-then-enter
-    // interaction.
-    onCountryFocus(market?.nameZh ?? countryName, market);
-    queueAutoRotate();
-  }, [clearResumeTimer, onCountryFocus, onMarketEnter, queueAutoRotate, reducedMotion]);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, compact ? 1.15 : 1.55));
+    renderer.setClearColor('#02060d', 0);
+    globe.pointOfView({ lat: 18, lng: 105, altitude: compact ? 2.18 : 1.95 }, 0);
+    setReady(true);
+  }, [compact]);
 
   return (
-    <div
-      ref={hostRef}
-      aria-hidden="true"
-      data-hovered-country={hoveredCountry ?? ''}
-      data-selected-country={visibleSelectedCountry ?? ''}
-      style={{ cursor: hoveredCountry ? 'pointer' : 'grab' }}
-    >
+    <div ref={hostRef} data-ready={ready} data-scene-step={introStep}>
       <Globe
         ref={globeRef}
         width={size.width}
         height={size.height}
-        backgroundColor="#071b3b"
-        rendererConfig={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
-        globeMaterial={oceanMaterial}
+        backgroundColor="rgba(0,0,0,0)"
+        rendererConfig={{ alpha: true, antialias: !compact, powerPreference: 'high-performance' }}
+        globeImageUrl="/earth-at-night-2048.png"
         showGlobe
-        showGraticules
-        showAtmosphere={false}
-        animateIn={!reducedMotion}
+        showAtmosphere
+        atmosphereColor="#2d91ff"
+        atmosphereAltitude={0.18}
+        showGraticules={!compact}
+        animateIn={false}
         polygonsData={features}
-        polygonAltitude={(polygon) => {
-          const countryName = getCountryName(polygon);
-          const market = countryName ? marketForCountry(countryName) : null;
-          if (countryName === hoveredCountry) return 0.009;
-          if (countryName === visibleSelectedCountry) return 0.018;
-          if (market?.id === activeMarket?.id) return 0.009;
-          if (market?.id === focusedMarket?.id) return 0.006;
-          return 0.002;
-        }}
-        polygonCapColor={(polygon) => {
-          const countryName = getCountryName(polygon);
-          const market = countryName ? marketForCountry(countryName) : null;
-          if (countryName === hoveredCountry) return '#78f0d8';
-          if (countryName === visibleSelectedCountry && market?.id === activeMarket?.id) return '#5de3e5';
-          if (countryName === visibleSelectedCountry) return '#39d8b4';
-          if (market?.id === activeMarket?.id) return 'rgba(23, 105, 224, 0.82)';
-          if (market?.id === focusedMarket?.id) return 'rgba(44, 201, 165, 0.58)';
-          if (market) return 'rgba(40, 199, 222, 0.66)';
-          return 'rgba(78, 127, 181, 0.54)';
-        }}
-        polygonSideColor={(polygon) => {
-          const countryName = getCountryName(polygon);
-          const market = countryName ? marketForCountry(countryName) : null;
-          if (countryName === hoveredCountry) return '#0a8f86';
-          if (countryName === visibleSelectedCountry) return '#087f8f';
-          if (market?.id === activeMarket?.id) return '#0a3f8a';
-          if (market?.id === focusedMarket?.id) return '#086c72';
-          return 'rgba(7, 35, 72, 0.92)';
-        }}
-        polygonStrokeColor={() => 'rgba(180, 224, 255, 0.42)'}
-        polygonLabel={(polygon) => {
-          const countryName = getCountryName(polygon);
-          if (!countryName) return '';
-          const market = marketForCountry(countryName);
-          return market
-            ? `<strong>${market.nameZh}</strong><br/><span>${market.countriesZh}</span><br/><span>单击选中板块 · 双击展开板块数据</span>`
-            : `<strong>${countryName}</strong><br/><span>该国家暂未配置市场数据</span>`;
-        }}
-        polygonsTransitionDuration={reducedMotion ? 0 : 450}
-        onPolygonHover={(polygon) => setHoveredCountry(getCountryName(polygon))}
-        onPolygonClick={(polygon, event, coords) => handlePolygonClick(polygon, event, coords)}
-        pointsData={pointsData}
+        polygonAltitude={0.003}
+        polygonCapColor={() => 'rgba(4,12,24,.07)'}
+        polygonSideColor={() => 'rgba(8,24,48,.14)'}
+        polygonStrokeColor={() => 'rgba(140,184,225,.28)'}
+        polygonsTransitionDuration={0}
+        pointsData={visibleNodes}
         pointLat="lat"
         pointLng="lng"
-        pointAltitude={(point) => (point as PointDatum).active ? 0.09 : 0.025}
-        pointRadius={(point) => (point as PointDatum).active ? 0.45 : 0.24}
-        pointColor={(point) => (point as PointDatum).active ? '#ffffff' : '#5de3e5'}
-        pointLabel={(point) => (point as PointDatum).nameZh}
-        pointsTransitionDuration={reducedMotion ? 0 : 450}
-        arcsData={arcsData}
+        pointAltitude={(value) => (value as BusinessNode).id === selectedNodeId ? 0.075 : 0.035}
+        pointRadius={(value) => (value as BusinessNode).id === selectedNodeId ? 0.34 : 0.2}
+        pointColor={(value) => nodeColor(value as BusinessNode)}
+        pointLabel={(value) => {
+          const node = value as BusinessNode;
+          return `<div style="background:rgba(2,7,14,.9);border:1px solid rgba(139,193,255,.28);border-radius:8px;padding:8px 10px;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.36)"><strong>${node.name}</strong><br/><span style="color:#9db1c8;font-size:11px">${node.status}</span></div>`;
+        }}
+        pointsTransitionDuration={reducedMotion ? 0 : 500}
+        onPointHover={(value) => setHoveredNodeId(value ? (value as BusinessNode).id : null)}
+        onPointClick={(value) => focusNode(value as BusinessNode)}
+        ringsData={visibleNodes.filter((node) => node.id === selectedNodeId || node.introStep === introStep)}
+        ringLat="lat"
+        ringLng="lng"
+        ringAltitude={0.04}
+        ringColor={(value: object) => {
+          const color = nodeColor(value as BusinessNode);
+          return [`${color}bb`, `${color}00`];
+        }}
+        ringMaxRadius={compact ? 1.4 : 1.9}
+        ringPropagationSpeed={reducedMotion ? 0 : 1.45}
+        ringRepeatPeriod={reducedMotion ? 0 : 1500}
+        arcsData={visibleArcs}
         arcStartLat="startLat"
         arcStartLng="startLng"
         arcEndLat="endLat"
         arcEndLng="endLng"
-        arcColor={() => ['rgba(93, 227, 229, 0.2)', '#5de3e5', '#ffffff']}
+        arcColor={(value: object) => arcColor(value as SceneArc)}
         arcAltitudeAutoScale={0.32}
-        arcStroke={0.7}
-        arcDashLength={reducedMotion ? 1 : 0.42}
-        arcDashGap={reducedMotion ? 0 : 1.15}
-        arcDashAnimateTime={reducedMotion ? 0 : 2600}
-        arcsTransitionDuration={reducedMotion ? 0 : 600}
-        ringsData={activeMarket ? [activeMarket] : []}
-        ringLat="lat"
-        ringLng="lng"
-        ringAltitude={0.07}
-        ringColor={() => ['rgba(93,227,229,0.65)', 'rgba(93,227,229,0)']}
-        ringMaxRadius={2.2}
-        ringPropagationSpeed={reducedMotion ? 0 : 2.2}
-        ringRepeatPeriod={reducedMotion ? 0 : 1150}
-        labelsData={labelsData}
+        arcStroke={(value) => (value as SceneArc).type === 'handoff' ? 0.62 : 0.42}
+        arcDashLength={reducedMotion ? 1 : 0.52}
+        arcDashGap={reducedMotion ? 0 : 0.14}
+        arcDashInitialGap={() => Math.random()}
+        arcDashAnimateTime={reducedMotion ? 0 : 3100}
+        arcsTransitionDuration={reducedMotion ? 0 : 650}
+        labelsData={labels}
         labelLat="lat"
         labelLng="lng"
-        labelText="text"
-        labelColor={(label) => (label as LabelDatum).active ? '#ffffff' : '#84dfe6'}
-        labelAltitude={(label) => (label as LabelDatum).active ? 0.105 : 0.035}
-        labelSize={(label) => (label as LabelDatum).active ? 0.72 : 0.48}
-        labelDotRadius={0.18}
+        labelText="shortName"
+        labelColor={(value) => nodeColor(value as BusinessNode)}
+        labelAltitude={0.055}
+        labelSize={(value) => (value as BusinessNode).id === selectedNodeId ? 0.64 : 0.43}
+        labelDotRadius={0.12}
         labelIncludeDot
-        labelsTransitionDuration={reducedMotion ? 0 : 450}
+        labelsTransitionDuration={reducedMotion ? 0 : 350}
+        onLabelHover={(value) => setHoveredNodeId(value ? (value as BusinessNode).id : null)}
+        onLabelClick={(value) => focusNode(value as BusinessNode)}
         enablePointerInteraction
         showPointerCursor
-        onGlobeReady={handleGlobeReady}
+        onGlobeReady={handleReady}
       />
-      {(!globeReady || features.length === 0) && (
-        <div role="status">正在构建可交互地球…</div>
-      )}
+      {features.length === 0 && <div role="status">正在载入实时地球…</div>}
     </div>
   );
 }
