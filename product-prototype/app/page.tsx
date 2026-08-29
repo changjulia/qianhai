@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 
-type View = 'home' | 'projects' | 'content' | 'traffic' | 'inquiries' | 'customers' | 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
+type View = 'home' | 'projects' | 'agents' | 'approvals' | 'content' | 'schedule' | 'distribution' | 'traffic' | 'inquiries' | 'customers' | 'revenue' | 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
+type SourceView = '全部' | '人员创建' | '数字员工执行' | '待我处理';
 
 const agents = [
   { name: '市场策略 Agent', action: '完成马来西亚市场路径建议', unit: '项目管理', view: 'projects' as View, tone: 'blue' },
@@ -14,7 +15,7 @@ const agents = [
 ];
 
 const viewNames: Record<View, string> = {
-  home: '首页', projects: '项目管理', content: '内容创作', traffic: '流量分发', inquiries: '询盘中心', customers: '客户管理',
+  home: '首页', projects: '经营任务', agents: '执行动态', approvals: '审批与异常', content: '内容与素材', schedule: '排期与分发', distribution: '分发管理', traffic: '广告投放', inquiries: '客户经营', customers: '客户与商机', revenue: '收入归因',
   structure: '组织架构', permissions: '权限管理', accounts: '账号管理', data: '数据管理', security: '系统与安全',
 };
 
@@ -32,6 +33,18 @@ function AgentNote({ agent, children, action = '查看建议' }: { agent: string
 
 function Tabs({ items, active, setActive }: { items: string[]; active: string; setActive: (value: string) => void }) {
   return <div className="tabs">{items.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => setActive(item)}>{item}</button>)}</div>;
+}
+
+function SourceSwitcher({ active, setActive }: { active: SourceView; setActive: (value: SourceView) => void }) {
+  const items: SourceView[] = ['全部', '人员创建', '数字员工执行', '待我处理'];
+  return <div className="source-switcher"><span>任务来源</span>{items.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => setActive(item)}>{item}{item === '待我处理' && <em>7</em>}</button>)}</div>;
+}
+
+function sourceActions(source: SourceView, manualAction: string) {
+  if (source === '数字员工执行') return { action: '调整权限', secondary: '暂停执行' };
+  if (source === '待我处理') return { action: '批量批准', secondary: '转交处理' };
+  if (source === '人员创建') return { action: manualAction, secondary: '批量导入' };
+  return { action: undefined, secondary: '导出视图' };
 }
 
 function HomePage({ go }: { go: (view: View) => void }) {
@@ -67,9 +80,9 @@ function HomePage({ go }: { go: (view: View) => void }) {
 
 function ProjectsPage() {
   const [tab, setTab] = useState('项目列表');
-  const tabs = ['项目列表', '市场策略', '目标预算', '执行计划', '项目价值'];
+  const tabs = ['项目列表', '执行动态', '市场策略', '目标预算', '执行计划', '项目价值'];
   return <>
-    <PageHeader title="项目管理" desc="用项目组织市场、内容、流量与成交目标。" action="新建项目" secondary="AI 生成项目方案" />
+    <PageHeader title="经营任务" desc="为数字员工配置目标、预算、自主等级和行动边界。" action="新建经营任务" secondary="任务模板" />
     <Tabs items={tabs} active={tab} setActive={setTab} />
     {tab === '项目列表' ? <>
       <div className="stat-grid five"><Metric label="进行中项目" value="8" change="3 个重点"/><Metric label="项目总预算" value="¥ 246万" change="已用 48%"/><Metric label="累计有效询盘" value="333" change="+21.8%"/><Metric label="商机管道" value="¥ 1,544万" change="6.3× 投入"/><Metric label="异常项目" value="2" change="需要处理" warn/></div>
@@ -85,7 +98,7 @@ function ProjectsPage() {
         </section>
         <AgentNote agent="市场策略 Agent"><h3>抹茶项目优先扩大马来西亚</h3><p>渠道匹配度和询盘质量均高于新加坡；清真认证材料仍需在第二轮投放前补齐。</p><ul><li>优先客户：食品原料进口商</li><li>推荐路径：进口商 → 连锁饮品渠道</li><li>建议周期：90 天</li></ul></AgentNote>
       </div>
-    </> : <ProjectDetail tab={tab} />}
+    </> : tab === '执行动态' ? <section className="panel"><div className="panel-title"><div><h2>数字员工执行动态</h2><p>围绕当前经营任务查看行动、依据、权限和待人工介入事项</p></div><button>查看行动账本</button></div><div className="agent-runtime-grid">{agents.map((agent,i)=><button key={agent.name}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name.replace(' Agent','数字员工')}</strong><small>{agent.action}</small><em>{i<3?'自主执行':'审批模式'} · 贵州抹茶项目</em></span><b>{i===3?'待审批':'运行中'}</b></button>)}</div></section> : <ProjectDetail tab={tab} />}
   </>;
 }
 
@@ -102,10 +115,14 @@ function ProjectDetail({ tab }: { tab: string }) {
 
 function ContentPage() {
   const [tab, setTab] = useState('内容计划');
+  const [source, setSource] = useState<SourceView>('全部');
   const tabs = ['内容计划', '创作工作台', '素材库', '内容审核', '内容库'];
+  const actions = sourceActions(source, '创建内容');
   return <>
-    <PageHeader title="内容创作" desc="把项目策略转化为可审核、可分发、可转化的证据型内容。" action="创建内容" />
+    <PageHeader title="内容与素材" desc="人员可直接创作，也可监督、审批和接管数字员工产出的内容。" action={actions.action} secondary={actions.secondary} />
     <div className="context-strip"><span>当前项目</span><strong>贵州抹茶东南亚渠道增长</strong><i>／</i><span>Campaign</span><strong>马来西亚食品原料商获客</strong><button>切换⌄</button></div>
+    <SourceSwitcher active={source} setActive={setSource}/>
+    {source !== '全部' && <div className={`source-context ${source === '待我处理' ? 'attention' : ''}`}><span>{source === '人员创建' ? '人工工作区' : source === '数字员工执行' ? '数字员工行动流' : '集中处理队列'}</span><strong>{source === '人员创建' ? '显示由人员主动新建和推动的内容任务' : source === '数字员工执行' ? '显示数字员工创建、运行中及已完成的内容，并保留行动依据' : '7 项内容等待审核、补充证据或人工接管'}</strong></div>}
     <Tabs items={tabs} active={tab} setActive={setTab} />
     <div className="stat-grid five"><Metric label="本月计划" value="42"/><Metric label="已完成" value="31" change="74%"/><Metric label="待审核" value="7" change="今天 4 条" warn/><Metric label="已发布" value="26"/><Metric label="产生询盘" value="73" change="+19.7%"/></div>
     <div className="content-layout">
@@ -124,18 +141,67 @@ function ContentPage() {
   </>;
 }
 
+function SchedulePage() {
+  const [source, setSource] = useState<SourceView>('全部');
+  const [tab, setTab] = useState('排期日历');
+  const actions = sourceActions(source, tab === '排期日历' ? '新建排期' : '创建分发计划');
+  return <>
+    <PageHeader title="排期与分发" desc="统一管理排期、跨平台分发、发布状态与失败重试。" action={actions.action} secondary={actions.secondary}/>
+    <SourceSwitcher active={source} setActive={setSource}/>
+    {source !== '全部' && <div className={`source-context ${source === '待我处理' ? 'attention' : ''}`}><span>{source === '人员创建' ? '人工排期' : source === '数字员工执行' ? '数字员工排期' : '发布异常'}</span><strong>{source === '人员创建' ? '拖拽调整、批量排期并锁定重要发布日期' : source === '数字员工执行' ? '本周已自动安排 18 条内容，3 条根据受众活跃时间调整' : '2 条内容缺少审核，1 个平台授权即将过期'}</strong></div>}
+    <Tabs items={['排期日历','分发管理']} active={tab} setActive={setTab}/>
+    <div className="stat-grid four"><Metric label={tab === '排期日历' ? '本周计划' : '本周分发'} value={tab === '排期日历' ? '26' : '48'}/><Metric label="数字员工执行" value={tab === '排期日历' ? '18' : '35'} change={tab === '排期日历' ? '69%' : '72.9%'}/><Metric label="人员创建" value={tab === '排期日历' ? '8' : '13'}/><Metric label="待处理" value="3" change="需要确认" warn/></div>
+    <section className="panel table-panel"><div className="panel-title"><div><h2>{tab === '排期日历' ? '本周发布日历' : '跨平台分发计划'}</h2><p>来源、审批状态、平台状态和接管状态始终可追踪</p></div><button>{tab === '排期日历' ? '周视图⌄' : '筛选⌄'}</button></div><TrafficVisual tab="分发计划"/></section>
+  </>;
+}
+
+function AgentsPage() {
+  return <>
+    <PageHeader title="员工团队" desc="查看数字员工正在为哪些目标工作、采取了什么行动。" action="配置员工团队"/>
+    <div className="stat-grid four"><Metric label="运行中员工" value="6"/><Metric label="今日自主动作" value="128" change="92% 自动完成"/><Metric label="等待审批" value="7" change="需要处理" warn/><Metric label="Agent 主导商机" value="21" change="¥486万"/></div>
+    <section className="panel"><div className="panel-title"><div><h2>数字员工运行状态</h2><p>内容 40% · 信号 30% · 客户承接 30%</p></div><button>查看行动账本</button></div><div className="agent-runtime-grid">{agents.map((agent,i)=><button key={agent.name}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name.replace(' Agent','数字员工')}</strong><small>{agent.action}</small><em>{i<3?'自主执行':'审批模式'} · 贵州抹茶项目</em></span><b>{i===3?'待审批':'运行中'}</b></button>)}</div></section>
+  </>;
+}
+
+function ApprovalsPage() {
+  const items = [['预算调整','分发增长数字员工','将 LinkedIn 预算提高 12%','预计 +4 条合格询盘','高'],['商务承诺','询盘接待数字员工','客户询问马来西亚独家代理','必须由销售总监确认','高'],['内容事实','内容生产数字员工','英文检测报告有效期待确认','等待质量负责人','中'],['发布异常','内容发布数字员工','Instagram 授权将在 3 天后过期','重新授权账号','中']];
+  return <>
+    <PageHeader title="审批与异常" desc="集中处理数字员工无法自主完成的受限动作和异常。" action="批量批准" secondary="转交处理"/>
+    <div className="stat-grid four"><Metric label="待审批" value="7"/><Metric label="运行异常" value="3" change="1 项高风险" warn/><Metric label="平均处理时间" value="18分钟"/><Metric label="今日自动通过" value="86" change="规则命中"/></div>
+    <section className="panel"><div className="approval-list"><div className="approval-row head"><span>事项</span><span>来源</span><span>数字员工请求</span><span>影响与原因</span><span>操作</span></div>{items.map(item=><div className="approval-row" key={item[0]}><span><strong>{item[0]}</strong><small className={item[4]==='高'?'risk-high':''}>{item[4]}风险</small></span><span>{item[1]}</span><span>{item[2]}</span><span>{item[3]}</span><span><button>驳回</button><button className="approve">批准</button></span></div>)}</div></section>
+  </>;
+}
+
+function DistributionPage() {
+  const [source, setSource] = useState<SourceView>('全部');
+  const [tab, setTab] = useState('分发计划');
+  const actions = sourceActions(source, '创建分发计划');
+  return <>
+    <PageHeader title="分发管理" desc="统一管理自然分发、平台版本、发布状态和失败重试。" action={actions.action} secondary={actions.secondary}/>
+    <SourceSwitcher active={source} setActive={setSource}/>
+    {source !== '全部' && <div className={`source-context ${source === '待我处理' ? 'attention' : ''}`}><span>{source === '人员创建' ? '人工分发' : source === '数字员工执行' ? '自动分发中' : '分发异常'}</span><strong>{source === '人员创建' ? '显示人员创建的平台分发计划' : source === '数字员工执行' ? '数字员工已将 18 条内容适配并分发到 4 个海外平台' : '1 个账号授权异常，2 条内容等待平台审核'}</strong></div>}
+    <Tabs items={['分发计划','平台账号','发布状态','失败重试']} active={tab} setActive={setTab}/>
+    <div className="stat-grid four"><Metric label="本周分发" value="48"/><Metric label="成功发布" value="43" change="89.6%"/><Metric label="数字员工执行" value="35"/><Metric label="待处理" value="3" change="需要确认" warn/></div>
+    <section className="panel table-panel"><div className="panel-title"><div><h2>{tab}</h2><p>当前项目 · 贵州抹茶东南亚渠道增长</p></div><button>筛选⌄</button></div>{tab === '分发计划' ? <TrafficVisual tab="分发计划"/> : <div className="data-table traffic-table"><div className="tr th"><span>内容／账号</span><span>平台</span><span>来源</span><span>计划时间</span><span>状态</span><span>结果</span><span>操作</span></div>{[['工厂品质验证','LinkedIn','数字员工','今天 09:30','已发布','访问 6,800','查看'],['应用场景获客','Meta','人员创建','今天 11:00','已发布','访问 12,400','查看'],['渠道利润政策','LinkedIn','数字员工','今天 16:30','待审核','—','处理'],['应用配方视频','YouTube','数字员工','明天 10:00','已排期','—','调整']].map(r=><button className="tr" key={r[0]}>{r.map((x,i)=><span key={i} className={i===0?'strong-cell':''}>{x}</span>)}</button>)}</div>}</section>
+  </>;
+}
+
 function TrafficPage() {
   const [tab, setTab] = useState('投流管理');
-  const tabs = ['分发计划', '投流管理', '受众', '流量分析', '优化建议'];
+  const [source, setSource] = useState<SourceView>('全部');
+  const tabs = ['投流管理', '受众', '流量分析', '优化建议'];
+  const actions = sourceActions(source, '创建投流计划');
   return <>
-    <PageHeader title="流量分发" desc="统一管理自然分发、定向投流和海外流量质量。" action="创建分发计划" secondary="创建投流计划" />
+    <PageHeader title="广告投放" desc="管理付费流量，并监督数字员工的预算、受众和素材动作。" action={actions.action} secondary={actions.secondary} />
+    <SourceSwitcher active={source} setActive={setSource}/>
+    {source !== '全部' && <div className={`source-context ${source === '待我处理' ? 'attention' : ''}`}><span>{source === '人员创建' ? '人工投放' : source === '数字员工执行' ? '自主执行中' : '待审批预算'}</span><strong>{source === '人员创建' ? '显示由人员创建和调整的投流计划' : source === '数字员工执行' ? '数字员工正在运行 4 个 Campaign，预算动作均在授权范围内' : '2 项预算调整等待批准，预计影响 4 条合格询盘'}</strong></div>}
     <Tabs items={tabs} active={tab} setActive={setTab} />
     <div className="stat-grid five"><Metric label="海外曝光" value="184万" change="+22.4%"/><Metric label="目标市场触达" value="132万"/><Metric label="精准访问" value="26,480" change="+18.6%"/><Metric label="有效询盘" value="186" change="+24.1%"/><Metric label="单条询盘成本" value="¥ 1,172" change="-14.3%"/></div>
     <div className="two-col-wide"><section className="panel table-panel"><div className="panel-title"><div><h2>{tab}</h2><p>当前项目 · 2026.08.15 — 08.28</p></div><button>导出报告</button></div>
       {tab === '投流管理' || tab === '优化建议' ? <div className="data-table traffic-table"><div className="tr th"><span>Campaign</span><span>平台</span><span>预算／消耗</span><span>访问</span><span>询盘</span><span>合格客户</span><span>商机贡献</span></div>{[
         ['工厂品质验证','LinkedIn','¥72K / ¥61K','6,800','63','31','¥142万'],['应用场景获客','Meta','¥88K / ¥79K','12,400','71','19','¥98万'],['采购需求搜索','Google','¥54K / ¥48K','4,900','38','12','¥116万'],['品牌认知视频','YouTube','¥36K / ¥30K','2,380','14','5','¥36万'],
       ].map(r=><button className="tr" key={r[0]}>{r.map((x,i)=><span key={i} className={i===0?'strong-cell':''}>{x}</span>)}</button>)}</div> : <TrafficVisual tab={tab}/>} 
-    </section><AgentNote agent="分发增长 Agent" action="审批预算调整"><h3>建议重新分配 20% 预算</h3><p>“渠道利润与合作政策”内容的合格询盘率高出消费场景短片 38%。</p><div className="impact"><span><b>+12</b> 有效询盘</span><span><b>+4</b> 合格客户</span><span><b>¥3,200</b> 预计节省</span></div></AgentNote></div>
+    </section><AgentNote agent="分发增长数字员工" action={source === '数字员工执行' ? '查看行动依据' : '审批预算调整'}><h3>{source === '数字员工执行' ? '已在权限内调整 8% 预算' : '建议重新分配 20% 预算'}</h3><p>“渠道利润与合作政策”内容的合格询盘率高出消费场景短片 38%。每次调整均记录依据、权限和结果。</p><div className="impact"><span><b>+12</b> 有效询盘</span><span><b>+4</b> 合格客户</span><span><b>¥3,200</b> 预计节省</span></div></AgentNote></div>
   </>;
 }
 
@@ -155,7 +221,8 @@ function InquiriesPage({ go }: { go: (view: View) => void }) {
   ];
   const q = inquiries[selected];
   return <>
-    <PageHeader title="询盘中心" desc="统一承接评论、私信、邮件、表单与 WhatsApp。" />
+    <PageHeader title="客户经营" desc="统一承接询盘、客户、商机和成交推进。" />
+    <Tabs items={['询盘与对话','客户与商机']} active="询盘与对话" setActive={(next)=>{if(next==='客户与商机') go('customers')}}/>
     <div className="stat-grid five"><Metric label="今日新增" value="18" change="+6"/><Metric label="待处理" value="32" change="需要响应" warn/><Metric label="高意向" value="11"/><Metric label="平均首次响应" value="16 分钟" change="-21%"/><Metric label="本月转客户率" value="36%" change="+4.8%"/></div>
     <div className="inquiry-layout">
       <aside className="inquiry-list"><div className="list-search">搜索询盘或企业</div>{inquiries.map((item,i)=><button key={item[0]} className={selected===i?'active':''} onClick={()=>setSelected(i)}><span className="contact-avatar">{item[0].slice(0,1)}</span><span><strong>{item[0]} <em>{item[4]}</em></strong><small>{item[1]} · {item[2]}</small><p>{item[3]}</p></span></button>)}</aside>
@@ -165,16 +232,25 @@ function InquiriesPage({ go }: { go: (view: View) => void }) {
   </>;
 }
 
-function CustomersPage() {
+function CustomersPage({ go }: { go: (view: View) => void }) {
   const [tab, setTab] = useState('客户列表');
   const tabs = ['客户列表','商机看板','跟进任务','报价订单','转化归因'];
   return <>
-    <PageHeader title="客户管理" desc="把合格询盘持续推进到样品、报价和订单。" action="新建客户" />
+    <PageHeader title="客户经营" desc="统一承接询盘、客户、商机和成交推进。" action="新建客户" />
+    <Tabs items={['询盘与对话','客户与商机']} active="客户与商机" setActive={(next)=>{if(next==='询盘与对话') go('inquiries')}}/>
     <Tabs items={tabs} active={tab} setActive={setTab}/>
     <div className="stat-grid five"><Metric label="合格客户" value="67" change="+12"/><Metric label="活跃商机" value="21"/><Metric label="报价中" value="8"/><Metric label="成交订单" value="3"/><Metric label="成交金额" value="¥126万" change="3.8× 投入"/></div>
     <div className="two-col-wide"><section className="panel table-panel"><div className="panel-title"><div><h2>{tab}</h2><p>当前项目 · 贵州抹茶东南亚渠道增长</p></div><button>筛选⌄</button></div>
       {tab === '商机看板' ? <DealBoard/> : tab === '转化归因' ? <Attribution/> : <CustomerTable mode={tab}/>} 
     </section><AgentNote agent="成交推进 Agent" action="生成跟进任务"><h3>Lumi Ingredients · 报价阶段</h3><div className="impact"><span><b>¥68万</b> 商机金额</span><span><b>65%</b> 成交概率</span></div><p>对方已确认首批采购量，但尚未确认区域授权条件。建议今天发送阶梯报价、区域说明和市场支持计划。</p><small className="risk-note">风险：清真认证文件仍待补充</small></AgentNote></div>
+  </>;
+}
+
+function RevenuePage() {
+  return <>
+    <PageHeader title="收入归因" desc="区分数字员工自主增长、人工协同增长与自然／纯人工增长。" secondary="导出归因报告"/>
+    <div className="stat-grid four"><Metric label="数字员工自主增长" value="¥68万" change="18%"/><Metric label="人工＋AI 协同增长" value="¥168万" change="44%"/><Metric label="自然／纯人工增长" value="¥146万" change="38%"/><Metric label="可归因商机" value="¥486万" change="完整率 92%"/></div>
+    <section className="panel"><div className="panel-title"><div><h2>转化证据链</h2><p>从经营任务、执行来源和客户触点追溯到商业结果</p></div><button>切换归因模型⌄</button></div><Attribution/></section>
   </>;
 }
 
@@ -188,6 +264,7 @@ function DealBoard(){const columns: Array<[string,string[]]>=[['合格线索',['
 function Attribution(){return <div className="attribution"><div><span>首次触点</span><b>LinkedIn 工厂品质视频</b><small>8月18日 · 自然触达</small></div><i>→</i><div><span>内容承接</span><b>英文规格书落地页</b><small>访问 3 次 · 下载 1 次</small></div><i>→</i><div><span>询盘</span><b>WhatsApp 样品咨询</b><small>8月20日 · 高意向</small></div><i>→</i><div><span>订单</span><b>SO-202608-003</b><small>成交 ¥68万</small></div></div>}
 
 function OrganizationPage({ view }: { view: View }) {
+  const [permissionTab, setPermissionTab] = useState(view === 'accounts' ? '账号连接' : '权限管理');
   const configs: Record<View, {desc:string; metrics:string[][]}> = {
     structure:{desc:'配置事业部、品牌、项目组及外部协作关系。',metrics:[['组织节点','12'],['事业部','3'],['品牌','6'],['成员','84']]},
     permissions:{desc:'管理角色、数据范围、审批流程与 Agent 行动边界。',metrics:[['预置角色','8'],['权限策略','36'],['审批流程','9'],['异常权限','1']]},
@@ -197,7 +274,8 @@ function OrganizationPage({ view }: { view: View }) {
     home:{desc:'',metrics:[]},projects:{desc:'',metrics:[]},content:{desc:'',metrics:[]},traffic:{desc:'',metrics:[]},inquiries:{desc:'',metrics:[]},customers:{desc:'',metrics:[]},
   };
   const item=configs[view];
-  return <><PageHeader title={viewNames[view]} desc={item.desc} action={view==='structure'?'新建组织节点':undefined}/><div className="stat-grid four">{item.metrics.map(m=><Metric key={m[0]} label={m[0]} value={m[1]}/>)}</div><section className="panel org-panel">{view==='structure'?<OrgTree/>:view==='permissions'?<PermissionMatrix/>:view==='accounts'?<AccountGrid/>:view==='data'?<DataManagement/>:<SecurityPage/>}</section></>;
+  const mergedPermissionPage = view === 'permissions' || view === 'accounts';
+  return <><PageHeader title={mergedPermissionPage ? '权限与账号' : viewNames[view]} desc={mergedPermissionPage ? '统一管理成员权限、数字员工行动边界和平台账号连接。' : item.desc} action={view==='structure'?'新建组织节点':undefined}/>{mergedPermissionPage && <Tabs items={['权限管理','账号连接']} active={permissionTab} setActive={setPermissionTab}/>}<div className="stat-grid four">{item.metrics.map(m=><Metric key={m[0]} label={m[0]} value={m[1]}/>)}</div><section className="panel org-panel">{view==='structure'?<OrgTree/>:mergedPermissionPage?(permissionTab === '权限管理'?<PermissionMatrix/>:<AccountGrid/>):view==='data'?<DataManagement/>:<SecurityPage/>}</section></>;
 }
 
 function OrgTree(){return <div className="org-layout"><div className="org-tree"><h3>黔山国际产业集团</h3>{['国际增长中心','茶与食品事业部','　├ 黔绿方舟品牌','　└ 山王果品牌','工业品事业部','　└ 黔轮制造品牌','外部合作团队'].map((x,i)=><button className={i===1?'active':''} key={x}>{x}<small>{[18,32,16,11,21,13,13][i]} 人</small></button>)}</div><div className="org-detail"><span>事业部</span><h2>茶与食品事业部</h2><p>负责茶、刺梨与特色食品品牌的国内外增长项目。</p><div className="mini-metrics"><div><span>负责人</span><b>陈妍</b><small>事业部总经理</small></div><div><span>品牌</span><b>2</b><small>黔绿方舟、山王果</small></div><div><span>增长项目</span><b>5</b><small>3 个进行中</small></div></div></div></div>}
@@ -213,27 +291,29 @@ function SecurityPage(){return <div><div className="panel-title"><div><h2>Agent 
 export default function Home() {
   const [view, setView] = useState<View>('home');
   const go = (next: View) => setView(next);
-  const dealOpen = view === 'inquiries' || view === 'customers';
-  const orgOpen = ['structure','permissions','accounts','data','security'].includes(view);
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-logo">黔</span><div><strong>黔海</strong><small>Global Growth OS</small></div></div>
       <nav className="main-nav" aria-label="主导航">
         <button className={view==='home'?'nav-item active':'nav-item'} onClick={()=>go('home')}><span className="nav-mark">⌂</span><span>首页</span></button>
-        <p className="nav-section">功能单元</p>
-        <button className={view==='projects'?'nav-item active':'nav-item'} onClick={()=>go('projects')}><span className="nav-mark">项</span><span>项目管理</span></button>
-        <button className={view==='content'?'nav-item active':'nav-item'} onClick={()=>go('content')}><span className="nav-mark">创</span><span>内容创作</span></button>
-        <button className={view==='traffic'?'nav-item active':'nav-item'} onClick={()=>go('traffic')}><span className="nav-mark">流</span><span>流量分发</span></button>
-        <button className={dealOpen?'nav-item active-parent':'nav-item'} onClick={()=>go('inquiries')}><span className="nav-mark">成</span><span>成交管理</span><b>⌄</b></button>
-        <div className="subnav"><button className={view==='inquiries'?'active':''} onClick={()=>go('inquiries')}>询盘中心</button><button className={view==='customers'?'active':''} onClick={()=>go('customers')}>客户管理</button></div>
-        <button className={orgOpen?'nav-item active-parent':'nav-item'} onClick={()=>go('structure')}><span className="nav-mark">组</span><span>组织管理</span><b>⌄</b></button>
-        <div className="subnav org-sub">{([['structure','组织架构'],['permissions','权限管理'],['accounts','账号管理'],['data','数据管理'],['security','系统与安全']] as [View,string][]).map(x=><button key={x[0]} className={view===x[0]?'active':''} onClick={()=>go(x[0])}>{x[1]}</button>)}</div>
+        <p className="nav-section">内容与流量运营</p>
+        <button className={view==='content'?'nav-item active':'nav-item'} onClick={()=>go('content')}><span className="nav-mark">创</span><span>内容与素材</span></button>
+        <button className={view==='schedule'||view==='distribution'?'nav-item active':'nav-item'} onClick={()=>go('schedule')}><span className="nav-mark">排</span><span>排期与分发</span></button>
+        <button className={view==='traffic'?'nav-item active':'nav-item'} onClick={()=>go('traffic')}><span className="nav-mark">投</span><span>广告投放</span></button>
+        <p className="nav-section">增长任务</p>
+        <button className={view==='projects'||view==='agents'?'nav-item active':'nav-item'} onClick={()=>go('projects')}><span className="nav-mark">任</span><span>经营任务</span></button>
+        <button className={view==='approvals'?'nav-item active':'nav-item'} onClick={()=>go('approvals')}><span className="nav-mark">审</span><span>审批与异常</span><b className="nav-badge">7</b></button>
+        <p className="nav-section">客户经营</p>
+        <button className={view==='inquiries'||view==='customers'?'nav-item active':'nav-item'} onClick={()=>go('inquiries')}><span className="nav-mark">客</span><span>客户经营</span></button>
+        <button className={view==='revenue'?'nav-item active':'nav-item'} onClick={()=>go('revenue')}><span className="nav-mark">收</span><span>收入归因</span></button>
+        <p className="nav-section">平台管理</p>
+        {([['structure','组织架构','组'],['permissions','权限与账号','权'],['data','数据管理','数'],['security','系统与安全','安']] as [View,string,string][]).map(x=><button key={x[0]} className={view===x[0]||(x[0]==='permissions'&&view==='accounts')?'nav-item active':'nav-item'} onClick={()=>go(x[0])}><span className="nav-mark">{x[2]}</span><span>{x[1]}</span></button>)}
       </nav>
       <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><span>···</span></div>
     </aside>
     <section className="workspace">
       <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher">切换组织⌄</button></div><div className="top-actions"><button className="search">搜索项目、内容或客户</button><button className="agent-status">AI · 6 位运行中</button><button className="notice">3</button></div></header>
-      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='content'?<ContentPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage/>:<OrganizationPage view={view}/>}</div>
+      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<OrganizationPage view={view}/>}</div>
     </section>
   </main>;
 }
