@@ -135,6 +135,13 @@ command -v jq >/dev/null || fail 'jq is required'
 health="$(request GET /api/health)"
 assert_json "$health" '.ok == true' 'health check must report ok'
 
+first_login="$(request POST /api/onboarding/first-login)"
+assert_json "$first_login" '.shouldStartOnboarding == true' 'new account must receive onboarding on first login'
+first_issued_at="$(jq -c '.issuedAt' <<<"$first_login")"
+repeat_login="$(request POST /api/onboarding/first-login)"
+assert_json "$repeat_login" '.shouldStartOnboarding == false' 'returning account must not receive onboarding again'
+assert_json "$repeat_login" ".issuedAt == $first_issued_at" 'repeat login must preserve the original issue timestamp'
+
 # A unique run id is the isolation boundary. A prior run with the same explicit id
 # must be empty, so accidental reuse cannot overwrite or delete unrelated data.
 snapshot="$(workflow get_run)"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlatformManagementPage, type PlatformView } from './components/platform-management';
 
 const recordAction=(action:string,description:string)=>fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,description})}).catch(()=>null);
@@ -50,24 +50,69 @@ function ActionDialog({ title, desc, confirm='确认', onClose, onConfirm }: { t
 type OnboardingStage = 'auth' | 'setup' | null;
 type SetupData = { company:string; industry:string; product:string; market:string; autonomy:string };
 
-function OnboardingFlow({stage,onStageChange,onComplete,onSkip}:{stage:OnboardingStage;onStageChange:(stage:OnboardingStage)=>void;onComplete:(data:SetupData)=>void;onSkip:()=>void}) {
+type OnboardingClaimResponse = {
+  shouldStartOnboarding?: boolean;
+  error?: { message?: string };
+};
+
+class OnboardingClaimError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = 'OnboardingClaimError';
+  }
+}
+
+async function claimFirstLoginOnboarding(signal?: AbortSignal): Promise<boolean> {
+  const response = await fetch('/api/onboarding/first-login', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  const payload = await response.json().catch(() => null) as OnboardingClaimResponse | null;
+  if (!response.ok) {
+    throw new OnboardingClaimError(response.status, payload?.error?.message ?? '新手任务状态确认失败');
+  }
+  if (typeof payload?.shouldStartOnboarding !== 'boolean') {
+    throw new OnboardingClaimError(502, '新手任务接口返回了无效结果');
+  }
+  return payload.shouldStartOnboarding;
+}
+
+function OnboardingFlow({stage,onStageChange,onComplete,onSkip,onAuthenticate}:{stage:OnboardingStage;onStageChange:(stage:OnboardingStage)=>void;onComplete:(data:SetupData)=>void;onSkip:()=>void;onAuthenticate:()=>Promise<boolean>}) {
   const [authMode,setAuthMode]=useState<'register'|'login'>('register');
   const [step,setStep]=useState(1);
-  const [data,setData]=useState<SetupData>({company:'黔山国际产业集团',industry:'茶与特色食品',product:'贵州抹茶',market:'马来西亚',autonomy:'审批后执行'});
+  const [data,setData]=useState<SetupData>({company:'贵州茶产业演示账号',industry:'贵州茶产业',product:'贵州茶',market:'马来西亚',autonomy:'审批后执行'});
+  const [authSubmitting,setAuthSubmitting]=useState(false);
+  const [authError,setAuthError]=useState('');
   if(!stage)return null;
   const update=(key:keyof SetupData,value:string)=>setData(current=>({...current,[key]:value}));
   const finish=()=>onComplete(data);
+  const submitAuth=async(event:React.FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    setAuthSubmitting(true);
+    setAuthError('');
+    try {
+      const shouldStartOnboarding=await onAuthenticate();
+      if(shouldStartOnboarding){setStep(1);onStageChange('setup')}
+      else onSkip();
+    } catch(error) {
+      setAuthError(error instanceof Error?error.message:'登录状态确认失败，请稍后重试');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
   return <div className="onboarding-backdrop" role="presentation">
     <section className={`onboarding-card ${stage==='setup'?'setup-card':''}`} role="dialog" aria-modal="true" aria-label={stage==='auth'?'登录或注册':'首次使用引导'}>
       <div className="onboarding-brand"><span>黔</span><p><strong>黔海</strong><small>Global Growth OS</small></p></div>
       {stage==='auth'?<>
         <div className="auth-welcome"><span className="onboarding-kicker">企业出海增长工作台</span><h1>{authMode==='register'?'创建你的黔海账号':'欢迎回来'}</h1><p>{authMode==='register'?'用 3 步建立第一个出海经营任务。':'登录后继续管理你的经营任务。'}</p></div>
-        <div className="auth-tabs" role="tablist"><button className={authMode==='register'?'active':''} onClick={()=>setAuthMode('register')}>注册</button><button className={authMode==='login'?'active':''} onClick={()=>setAuthMode('login')}>登录</button></div>
-        <form className="auth-form" onSubmit={event=>{event.preventDefault();onStageChange('setup')}}>
+        <div className="auth-tabs" role="tablist"><button className={authMode==='register'?'active':''} onClick={()=>{setAuthMode('register');setAuthError('')}}>注册</button><button className={authMode==='login'?'active':''} onClick={()=>{setAuthMode('login');setAuthError('')}}>登录</button></div>
+        <form className="auth-form" onSubmit={submitAuth}>
           {authMode==='register'&&<label><span>姓名</span><input required defaultValue="陈雨晴" placeholder="请输入姓名" autoComplete="name"/></label>}
           <label><span>工作邮箱</span><input required type="email" defaultValue="chen@qianshan-global.cn" placeholder="name@company.com" autoComplete="email"/></label>
           <label><span>密码</span><input required type="password" defaultValue="qianhai2026" minLength={8} autoComplete={authMode==='register'?'new-password':'current-password'}/></label>
-          <button className="onboarding-primary" type="submit">{authMode==='register'?'注册并开始配置':'登录'} <b>→</b></button>
+          {authError&&<p className="auth-error" role="alert">{authError}</p>}
+          <button className="onboarding-primary" type="submit" disabled={authSubmitting}>{authSubmitting?'正在确认账号…':authMode==='register'?'注册并开始配置':'登录'} {!authSubmitting&&<b>→</b>}</button>
         </form>
         <div className="auth-trust"><span>✓ 企业数据隔离</span><span>✓ 全程行动留痕</span><span>✓ 关键操作需审批</span></div>
         <button className="onboarding-skip" onClick={onSkip}>先看看演示工作台</button>
@@ -75,7 +120,7 @@ function OnboardingFlow({stage,onStageChange,onComplete,onSkip}:{stage:Onboardin
         <header className="setup-head"><div><span className="onboarding-kicker">首次使用引导</span><h1>{step===1?'先让我们了解你的企业':step===2?'建立第一个出海目标':'设定数字员工的边界'}</h1><p>{step===1?'这些信息会帮助 AI 理解你的业务。':step===2?'我们将据此生成首个经营任务。':'你可以随时在权限管理中调整。'}</p></div><button className="setup-close" onClick={onSkip} aria-label="跳过引导">×</button></header>
         <div className="setup-progress">{[1,2,3].map(item=><div key={item} className={item===step?'active':item<step?'done':''}><i>{item<step?'✓':item}</i><span>{item===1?'企业信息':item===2?'产品与市场':'执行权限'}</span></div>)}</div>
         <div className="setup-body">
-          {step===1&&<div className="setup-fields"><label><span>企业名称</span><input value={data.company} onChange={e=>update('company',e.target.value)}/></label><label><span>所属产业</span><select value={data.industry} onChange={e=>update('industry',e.target.value)}><option>茶与特色食品</option><option>先进制造</option><option>文旅与服务</option><option>生物医药</option></select></label><aside><b>AI</b><p><strong>会用到哪里？</strong><small>用于匹配行业市场、采购角色和合规要求。</small></p></aside></div>}
+          {step===1&&<div className="setup-fields"><label><span>企业名称</span><input value={data.company} onChange={e=>update('company',e.target.value)}/></label><label><span>所属产业</span><input value="贵州茶产业" readOnly aria-readonly="true"/></label><aside><b>AI</b><p><strong>当前账号范围</strong><small>仅用于贵州茶行业的市场、采购角色和合规匹配。</small></p></aside></div>}
           {step===2&&<div className="setup-fields"><label><span>首个出海产品</span><input value={data.product} onChange={e=>update('product',e.target.value)}/></label><label><span>优先目标市场</span><select value={data.market} onChange={e=>update('market',e.target.value)}><option>马来西亚</option><option>新加坡</option><option>泰国</option><option>阿联酋</option><option>欧盟</option></select></label><div className="setup-preview"><span>将为你生成</span><strong>{data.product} · {data.market}市场获客任务</strong><small>包含市场策略、内容计划、分发节奏与询盘承接。</small></div></div>}
           {step===3&&<div className="autonomy-options">{[['建议模式','AI 只生成建议，所有动作由人工执行'],['审批后执行','AI 完成草案，经你确认后对外执行'],['边界内自主','低风险动作自动执行，重要事项仍需审批']].map((option,index)=><button key={option[0]} className={data.autonomy===option[0]?'active':''} onClick={()=>update('autonomy',option[0])}><i>{index===0?'○':index===1?'✓':'✦'}</i><span><strong>{option[0]}{index===1&&<em>推荐</em>}</strong><small>{option[1]}</small></span><b>{data.autonomy===option[0]?'●':'○'}</b></button>)}<p className="permission-note">价格、交期、认证与独家合作默认始终需要人工确认。</p></div>}
         </div>
@@ -144,7 +189,7 @@ function HomePage({ go }: { go: (view: View) => void }) {
     {label:'新增活跃商家',value:'118',goal:'目标 160',rate:74,delta:'同比 +11.6%',tone:'green'},
     {label:'累计成交金额',value:'¥ 356万',goal:'目标 ¥ 600万',rate:59,delta:'同比 +27.8%',tone:'cyan'},
   ],[period]);
-  useEffect(()=>{let active=true;requestAi('executive_summary',{period,metrics,focus:[{title:'3 条高意向询盘等待接管',amount:'¥86万'},{title:'刺梨项目询盘转化低于目标',gap:'22%'},{title:'第二轮投流预算需要确认',budget:'¥8万'}],funnel:[['精准访问',38420],['有效询盘',333],['合格商机',42],['已成交',8]]}).then(result=>{if(active)setAiSummary(result)}).catch(()=>{});return()=>{active=false}},[period,metrics]);
+  useEffect(()=>{let active=true;requestAi('executive_summary',{period,metrics,focus:[{title:'3 条高意向询盘等待接管',amount:'¥86万'},{title:'贵州茶项目询盘转化低于目标',gap:'22%'},{title:'第二轮投流预算需要确认',budget:'¥8万'}],funnel:[['精准访问',38420],['有效询盘',333],['合格商机',42],['已成交',8]]}).then(result=>{if(active)setAiSummary(result)}).catch(()=>{});return()=>{active=false}},[period,metrics]);
   return <>
     <div className="home-command-head">
       <div><p className="eyebrow">组织经营总览</p><h1>{dayGreeting}，陈雨晴</h1><p>先看结果与偏差，再处理需要你决策的事。</p></div>
@@ -158,8 +203,8 @@ function HomePage({ go }: { go: (view: View) => void }) {
         <div className="home-section-title"><div><span className="section-kicker">今日焦点</span><h2>3 件事最影响本月目标</h2></div><button onClick={()=>go('approvals')}>全部待处理 12 →</button></div>
         {[
           {level:'高',title:'3 条高意向询盘等待接管',desc:`${PROJECTS.matcha.name} · 最长已等待 18 分钟`,impact:'预计影响 ¥ 86万商机',view:'inquiries'},
-          {level:'中',title:'刺梨项目询盘转化低于目标 22%',desc:'马来西亚 · 连续 4 天下滑',impact:'AI 已生成调整方案',view:'projects'},
-          {level:'中',title:'第二轮投流预算需要确认',desc:`${PROJECTS.tire.name} · 申请追加 ¥ 8万`,impact:'预计新增 12–18 个询盘',view:'traffic'},
+          {level:'中',title:'贵州茶项目询盘转化低于目标 22%',desc:'马来西亚 · 连续 4 天下滑',impact:'AI 已生成调整方案',view:'projects'},
+          {level:'中',title:'第二轮投流预算需要确认',desc:`${PROJECTS.matcha.name} · 申请追加 ¥ 8万`,impact:'预计新增 12–18 个询盘',view:'traffic'},
         ].map(item=><button className="focus-row" key={item.title} onClick={()=>go(item.view as View)}><span className={`focus-level ${item.level==='高'?'high':''}`}>{item.level}</span><span><strong>{item.title}</strong><small>{item.desc}</small></span><em>{item.impact}</em><b>→</b></button>)}
       </section>
       <aside className="panel funnel-panel">
@@ -176,8 +221,6 @@ function HomePage({ go }: { go: (view: View) => void }) {
       <div className="mission-row head"><span>经营任务</span><span>阶段</span><span>目标达成</span><span>商机管道</span><span>投入产出</span><span>当前信号</span></div>
       {[
         [PROJECTS.matcha.name,'商机推进','78%','¥ 486万','6.8×','3 条高意向询盘','good'],
-        [PROJECTS.tire.name,'获客验证','71%','¥ 842万','7.4×','预算待确认','warn'],
-        [PROJECTS.rose.name,'内容测试','54%','¥ 216万','3.2×','转化低于目标','risk'],
       ].map(row=><button className="mission-row" key={row[0]} onClick={()=>go('projects')}><span><i className={`mission-dot ${row[6]}`}/><strong>{row[0]}</strong></span><span>{row[1]}</span><span><b>{row[2]}</b><i className="mini-track"><i style={{width:row[2]}}/></i></span><span>{row[3]}</span><span>{row[4]}</span><span><small className={row[6]}>{row[5]}</small></span></button>)}
     </section>
     <div className="home-footer-note"><span><i/>数据健康 96%</span><span>6 位数字员工运行中 · 今日已完成 128 次授权内行动</span><button onClick={()=>go('data')}>查看数据口径与行动账本 →</button></div>
@@ -207,8 +250,6 @@ function ProjectsPage() {
           <div className="data-table project-table"><div className="tr th"><span>项目</span><span>市场</span><span>阶段</span><span>内容</span><span>预算</span><span>询盘</span><span>商机金额</span><span>健康度</span></div>
             {[
               [PROJECTS.matcha.name,PROJECTS.matcha.countries,'获客验证','68 / 96','61%','186','¥ 486万','正常'],
-              [PROJECTS.rose.name,PROJECTS.rose.countries,'内容测试','32 / 72','38%','54','¥ 216万','关注'],
-              [PROJECTS.tire.name,PROJECTS.tire.countries,'商机推进','84 / 110','72%','93','¥ 842万','正常'],
             ].map(row => <button className="tr" key={row[0]} onClick={()=>setDialog({title:row[0],desc:`${row[1]} · ${row[2]}。项目详情已载入，可继续查看目标预算和执行计划。`})}>{row.map((cell, i) => <span key={i} className={i === 0 ? 'strong-cell' : ''}>{i === 7 ? <small className={cell === '正常' ? 'good' : 'warn'}>{cell}</small> : cell}</span>)}</button>)}
           </div>
         </section>
@@ -478,9 +519,26 @@ function LingshuStepCanvas({ step, onSubmit }: { step: number; onSubmit: () => v
   return <div className="final-preview"><section><div className="final-video"><span className="preview-play">▶</span><span>00:30</span><strong>Consistency you can verify.</strong></div><div className="final-track"><i/><i/><i/><i/><i/><i/></div></section><aside><span>成片已生成</span><h3>工厂品质 30 秒视频</h3><dl><dt>画幅</dt><dd>1080 × 1920</dd><dt>语言</dt><dd>English</dd><dt>字幕</dt><dd>已烧录</dd><dt>事实检查</dt><dd>5 / 6 通过</dd></dl><p>成片已完成，提交后将进入合成检查节点。</p><button onClick={onSubmit}>完成制作并进入合成检查</button></aside></div>;
 }
 
+type TeaMediaItem = {
+  id:string;
+  title:string;
+  category:string;
+  local_path:string;
+  source_url:string;
+  license_name:string;
+  truth_notice:string;
+};
+
 function VideoWorkflowCanvas({ step }: { step: number }) {
   const scenes = [['01','贵州高山茶园','航拍建立产地可信感'],['02','鲜叶与原料筛选','展示源头质量控制'],['03','自动化生产线','强调稳定规模供应'],['04','实验室批次检测','呈现可验证的质量记录'],['05','食品级抹茶包装','展示出口就绪状态'],['06','英文规格书 CTA','引导采购经理获取资料']];
-  return <div className="video-workflow-canvas"><section className="video-preview"><div className={`preview-frame phase-${step}`}><span>SCENE {Math.min(step+1,6)} / 6</span><div className="preview-visual"><i/><i/><i/></div><strong>{scenes[Math.min(step,5)][1]}</strong><small>{scenes[Math.min(step,5)][2]}</small><span className="preview-play">▶</span></div><div className="preview-track"><i style={{width:`${Math.max(18,(step+1)*16)}%`}}/></div><div className="preview-meta"><span>00:{String(Math.min(30,(step+1)*5)).padStart(2,'0')} / 00:30</span><span>1080 × 1920 · 英文</span></div></section><section className="scene-panel"><header><strong>视频分镜</strong><span>6 个镜头 · 30 秒</span></header>{scenes.map((s,i)=><div key={s[0]} className={i<step?'ready':i===step?'generating':''}><span>{i<step?'✓':s[0]}</span><p><strong>{s[1]}</strong><small>{s[2]}</small></p><em>{i<step?'已生成':i===step?'生成中…':'等待'}</em></div>)}</section></div>;
+  const [media,setMedia]=useState<TeaMediaItem[]>([]);
+  const [mediaError,setMediaError]=useState(false);
+  useEffect(()=>{let active=true;fetch('/api/tea-catalog?type=video').then(async response=>{
+    if(!response.ok)throw new Error(`tea catalog ${response.status}`);
+    return (await response.json()) as {items?:TeaMediaItem[]};
+  }).then(payload=>{if(active)setMedia(payload.items??[])}).catch(()=>{if(active)setMediaError(true)});return()=>{active=false}},[]);
+  const selected=media.length?media[Math.min(step,media.length-1)]:null;
+  return <div className="video-workflow-canvas"><section className="video-preview"><div className={`preview-frame phase-${step} real-media`}><span>SCENE {Math.min(step+1,6)} / 6</span>{selected?<video key={selected.local_path} src={selected.local_path} controls muted playsInline preload="metadata" aria-label={`${selected.category}：${selected.title}`}/>:<div className="preview-visual"><i/><i/><i/></div>}<strong>{selected?.category??scenes[Math.min(step,5)][1]}</strong><small>{selected?.truth_notice??(mediaError?'素材接口暂不可用，保留分镜占位。':scenes[Math.min(step,5)][2])}</small>{!selected&&<span className="preview-play">▶</span>}</div><div className="preview-track"><i style={{width:`${Math.max(18,(step+1)*16)}%`}}/></div><div className="preview-meta"><span>{selected?`素材 ${Math.min(step+1,media.length)} / ${media.length}`:`00:${String(Math.min(30,(step+1)*5)).padStart(2,'0')} / 00:30`}</span><span>{selected?`${selected.license_name} · 来源可追溯`:'1080 × 1920 · 英文'}</span></div>{selected&&<a className="media-source-link" href={selected.source_url} target="_blank" rel="noreferrer">查看来源与授权 ↗</a>}</section><section className="scene-panel"><header><strong>视频分镜</strong><span>{media.length?`${media.length} 条开放素材已入库`:'6 个镜头 · 30 秒'}</span></header>{scenes.map((s,i)=><div key={s[0]} className={i<step?'ready':i===step?'generating':''}><span>{i<step?'✓':s[0]}</span><p><strong>{s[1]}</strong><small>{s[2]}</small></p><em>{i<step?'已生成':i===step?'生成中…':'等待'}</em></div>)}</section></div>;
 }
 
 function SchedulePage() {
@@ -747,18 +805,12 @@ type OrgView = '组织结构' | '项目团队' | '外部协作' | '权限影响'
 
 const orgViewData: Record<OrgView, { title:string; subtitle:string; items:Array<{name:string; meta:string; tag:string; tone?:string}> }> = {
   组织结构:{title:'黔山国际产业集团',subtitle:'稳定的行政与品牌归属',items:[
-    {name:'国际增长中心',meta:'18 人 · 4 个项目',tag:'中心'},
-    {name:'茶与食品事业部',meta:'32 人 · 3 个项目',tag:'事业部'},
-    {name:'黔绿方舟',meta:'16 人 · 2 个项目',tag:'品牌'},
-    {name:'山王果',meta:'11 人 · 1 个项目',tag:'品牌'},
-    {name:'工业品事业部',meta:'21 人 · 2 个项目',tag:'事业部'},
-    {name:'黔轮制造',meta:'13 人 · 2 个项目',tag:'品牌'},
+    {name:'贵州茶国际增长中心',meta:'18 人 · 1 个项目',tag:'中心'},
+    {name:'贵州茶事业部',meta:'32 人 · 1 个项目',tag:'事业部'},
+    {name:'黔绿方舟',meta:'16 人 · 1 个项目',tag:'品牌'},
   ]},
   项目团队:{title:'跨部门增长项目',subtitle:'围绕经营任务动态组队',items:[
     {name:PROJECTS.matcha.name,meta:'8 人 · 审批模式',tag:'进行中'},
-    {name:PROJECTS.rose.name,meta:'6 人 · 自主模式',tag:'进行中'},
-    {name:PROJECTS.tire.name,meta:'11 人 · 审批模式',tag:'有风险',tone:'warn'},
-    {name:PROJECTS.brandTea.name,meta:'5 人 · 建议模式',tag:'准备中'},
   ]},
   外部协作:{title:'合作机构与服务团队',subtitle:'按项目授权，默认数据隔离',items:[
     {name:'贵州广电国际传播中心',meta:'内容制作 · 海外分发',tag:'合作中'},
@@ -803,13 +855,13 @@ function OrgDetail({view,selected}:{view:OrgView;selected:number}){
 
 function DetailHeader({tag,title,desc,actions=true}:{tag:string;title:string;desc:string;actions?:boolean}){return <div className="org-detail-header"><div><span>{tag}</span><h2>{title}</h2><p>{desc}</p></div>{actions&&<div><button onClick={()=>appFeedback('操作已响应','该操作已完成，页面状态已更新。')}>查看审计记录</button><button onClick={()=>appFeedback('操作已响应','该操作已完成，页面状态已更新。')} className="primary-lite">编辑配置</button></div>}</div>}
 
-function BusinessUnitDetail({brand}:{brand:boolean}){return <main className="org-detail"><DetailHeader tag={brand?'品牌':'事业部'} title={brand?'黔绿方舟':'茶与食品事业部'} desc={brand?'面向东南亚市场的贵州茶品牌，归属茶与食品事业部。':'负责茶、刺梨与特色食品品牌的国内外增长项目。'}/><div className="org-summary-grid"><Summary label="负责人" value={brand?'刘蓁':'陈妍'} note={brand?'品牌负责人':'事业部总经理'}/><Summary label="成员" value={brand?'16 人':'32 人'} note="跨 4 个职能"/><Summary label="运行项目" value={brand?'2':'3'} note="本月新增 1 个"/><Summary label="待处理" value="2" note="缺少业务接管人" warn/></div><section className="org-section"><SectionTitle title="经营范围与项目" note="行政归属不等于项目权限，具体范围由项目配置" action="查看全部项目"/><div className="project-cards"><ProjectCard title={PROJECTS.matcha.name} market={`${PROJECTS.matcha.countries} · 渠道型 B2B`} status="正常运行" people="8 人协作"/><ProjectCard title={PROJECTS.rose.name} market={`${PROJECTS.rose.countries} · 渠道验证`} status="待补岗位" people="6 人协作" warn/></div></section><section className="org-section"><SectionTitle title="默认责任与权限" note="新项目可继承，项目负责人可申请覆盖"/><div className="responsibility-row"><span><i>任</i><b>项目负责人</b><small>经营目标、预算和异常接管</small></span><strong>王宁</strong><em>已配置</em></div><div className="responsibility-row"><span><i>审</i><b>品牌审核人</b><small>产品事实、认证与品牌表达</small></span><strong>刘蓁</strong><em>已配置</em></div><div className="responsibility-row attention"><span><i>销</i><b>高价值商机接管</b><small>报价、独家代理与商务承诺</small></span><strong>未指定</strong><em>需补充</em></div></section></main>}
+function BusinessUnitDetail({brand}:{brand:boolean}){return <main className="org-detail"><DetailHeader tag={brand?'品牌':'事业部'} title={brand?'黔绿方舟':'贵州茶事业部'} desc={brand?'面向东南亚市场的贵州茶品牌，归属贵州茶事业部。':'负责贵州茶品牌的国内外增长项目。'}/><div className="org-summary-grid"><Summary label="负责人" value={brand?'刘蓁':'陈妍'} note={brand?'品牌负责人':'事业部总经理'}/><Summary label="成员" value={brand?'16 人':'32 人'} note="跨 4 个职能"/><Summary label="运行项目" value="1" note="贵州茶专项"/><Summary label="待处理" value="2" note="缺少业务接管人" warn/></div><section className="org-section"><SectionTitle title="经营范围与项目" note="行政归属不等于项目权限，具体范围由项目配置" action="查看全部项目"/><div className="project-cards"><ProjectCard title={PROJECTS.matcha.name} market={`${PROJECTS.matcha.countries} · 渠道型 B2B`} status="正常运行" people="8 人协作"/></div></section><section className="org-section"><SectionTitle title="默认责任与权限" note="新项目可继承，项目负责人可申请覆盖"/><div className="responsibility-row"><span><i>任</i><b>项目负责人</b><small>经营目标、预算和异常接管</small></span><strong>王宁</strong><em>已配置</em></div><div className="responsibility-row"><span><i>审</i><b>品牌审核人</b><small>产品事实、认证与品牌表达</small></span><strong>刘蓁</strong><em>已配置</em></div><div className="responsibility-row attention"><span><i>销</i><b>高价值商机接管</b><small>报价、独家代理与商务承诺</small></span><strong>未指定</strong><em>需补充</em></div></section></main>}
 
-function ProjectTeamDetail({compact}:{compact:boolean}){return <main className="org-detail"><DetailHeader tag="跨部门项目团队" title={compact?PROJECTS.tire.name:PROJECTS.matcha.name} desc="团队随经营任务组建，成员权限仅在本项目与授权周期内有效。"/><div className="team-context"><span><small>所属组织</small><strong>茶与食品事业部 / 黔绿方舟</strong></span><span><small>运行模式</small><strong>审批模式</strong></span><span><small>授权周期</small><strong>2026.08.01—11.30</strong></span><span><small>数字员工</small><strong>6 位运行中</strong></span></div><section className="org-section"><SectionTitle title="项目责任链" note="关键岗位缺失时，相关动作不会自动执行" action="调整团队"/><div className="team-role-grid">{[['王宁','项目负责人','目标、预算与异常'],['刘蓁','品牌审核','事实、认证与表达'],['周岚','海外销售','询盘、报价与谈判'],['何嘉','技术质量','规格与检测文件'],['贵州广电项目组','外部内容协作','制作、译制与分发'],['待指定','销售总监','折扣与独家代理']].map((x,i)=><div className={i===5?'missing':''} key={x[1]}><i>{x[0].slice(0,1)}</i><span><strong>{x[0]}</strong><b>{x[1]}</b><small>{x[2]}</small></span>{i===5&&<em>缺口</em>}</div>)}</div></section><section className="org-section"><SectionTitle title="协作与审批链" note="普通动作自动流转，越界动作准确交给责任人"/><div className="approval-flow"><span><i>AI</i><b>内容生产</b><small>数字员工</small></span><em>→</em><span><i>品</i><b>事实与品牌审核</b><small>刘蓁</small></span><em>→</em><span><i>发</i><b>发布与小额投流</b><small>自动执行</small></span><em>→</em><span className="risk"><i>商</i><b>报价／代理承诺</b><small>人工接管</small></span></div></section></main>}
+function ProjectTeamDetail({compact:_compact}:{compact:boolean}){return <main className="org-detail"><DetailHeader tag="跨部门项目团队" title={PROJECTS.matcha.name} desc="团队随经营任务组建，成员权限仅在本项目与授权周期内有效。"/><div className="team-context"><span><small>所属组织</small><strong>贵州茶事业部 / 黔绿方舟</strong></span><span><small>运行模式</small><strong>审批模式</strong></span><span><small>授权周期</small><strong>2026.08.01—11.30</strong></span><span><small>数字员工</small><strong>6 位运行中</strong></span></div><section className="org-section"><SectionTitle title="项目责任链" note="关键岗位缺失时，相关动作不会自动执行" action="调整团队"/><div className="team-role-grid">{[['王宁','项目负责人','目标、预算与异常'],['刘蓁','品牌审核','事实、认证与表达'],['周岚','海外销售','询盘、报价与谈判'],['何嘉','技术质量','规格与检测文件'],['贵州广电项目组','外部内容协作','制作、译制与分发'],['待指定','销售总监','折扣与独家代理']].map((x,i)=><div className={i===5?'missing':''} key={x[1]}><i>{x[0].slice(0,1)}</i><span><strong>{x[0]}</strong><b>{x[1]}</b><small>{x[2]}</small></span>{i===5&&<em>缺口</em>}</div>)}</div></section><section className="org-section"><SectionTitle title="协作与审批链" note="普通动作自动流转，越界动作准确交给责任人"/><div className="approval-flow"><span><i>AI</i><b>内容生产</b><small>数字员工</small></span><em>→</em><span><i>品</i><b>事实与品牌审核</b><small>刘蓁</small></span><em>→</em><span><i>发</i><b>发布与小额投流</b><small>自动执行</small></span><em>→</em><span className="risk"><i>商</i><b>报价／代理承诺</b><small>人工接管</small></span></div></section></main>}
 
 function PartnerDetail({expiring}:{expiring:boolean}){return <main className="org-detail"><DetailHeader tag="外部合作机构" title={expiring?'LinguaBridge 本地化':'贵州广电国际传播中心'} desc="外部协作按项目授权，不进入企业行政组织，默认隔离客户与商业数据。"/><div className="boundary-banner"><span>隔离边界</span><strong>仅可访问指定项目的内容、素材与排期；不可查看客户报价、毛利及其他品牌数据。</strong><button onClick={()=>appFeedback('操作已响应','该操作已完成，页面状态已更新。')}>调整边界</button></div><section className="org-section"><SectionTitle title="合作范围" note="权限来自项目合同与临时授权"/><div className="scope-grid"><Summary label="合作项目" value="1 个" note={PROJECTS.matcha.name}/><Summary label="外部成员" value="5 人" note="均已开启 MFA"/><Summary label="授权有效期" value={expiring?'剩余 7 天':'92 天'} note="到期自动回收" warn={expiring}/></div></section><section className="org-section"><SectionTitle title="可执行动作" note="字段级数据脱敏已开启"/><div className="action-chips"><span className="allowed">✓ 创建与编辑内容</span><span className="allowed">✓ 提交品牌审核</span><span className="allowed">✓ 管理指定海外账号排期</span><span className="review">审批　正式发布</span><span className="denied">— 客户与询盘</span><span className="denied">— 报价、成本与毛利</span></div></section></main>}
 
-function PermissionImpact({external}:{external:boolean}){return <main className="org-detail"><DetailHeader tag={external?'外部协作者':'成员权限画像'} title={external?'贵州广电项目组':'陈妍'} desc="汇总组织角色、项目角色与临时授权产生的实际权限。"/><div className="permission-formula"><span>实际权限</span><b>角色权限</b><i>×</i><b>数据范围</b><i>×</i><b>动作风险</b><i>×</i><b>项目上下文</b></div><section className="org-section"><SectionTitle title="权限来源" note="冲突时执行更严格的限制"/><div className="permission-source"><span><i>组</i><b>事业部负责人</b><small>茶与食品事业部 · 长期</small></span><em>组织角色</em><strong>管理事业部品牌与项目</strong></div><div className="permission-source"><span><i>项</i><b>项目经营审批人</b><small>东南亚市场项目 · 至 11月30日</small></span><em>项目角色</em><strong>目标、预算和异常审批</strong></div><div className="permission-source muted"><span><i>临</i><b>工业轮胎｜中东市场观察者</b><small>仅看汇总数据 · 至 9月15日</small></span><em>临时授权</em><strong>只读</strong></div></section><section className="org-section"><SectionTitle title="高风险动作影响" note="数字员工越界后将按此责任链路由"/><div className="impact-table"><div><span>预算单次上调 ＞10%</span><b>需要本人审批</b><em>2 项待处理</em></div><div><span>产品事实／认证变更</span><b>品牌审核人审批</b><em>正常</em></div><div><span>报价、折扣与独家代理</span><b>销售总监审批</b><em className="danger">责任人缺失</em></div></div></section></main>}
+function PermissionImpact({external}:{external:boolean}){return <main className="org-detail"><DetailHeader tag={external?'外部协作者':'成员权限画像'} title={external?'贵州广电项目组':'陈妍'} desc="汇总组织角色、项目角色与临时授权产生的实际权限。"/><div className="permission-formula"><span>实际权限</span><b>角色权限</b><i>×</i><b>数据范围</b><i>×</i><b>动作风险</b><i>×</i><b>项目上下文</b></div><section className="org-section"><SectionTitle title="权限来源" note="冲突时执行更严格的限制"/><div className="permission-source"><span><i>组</i><b>事业部负责人</b><small>贵州茶事业部 · 长期</small></span><em>组织角色</em><strong>管理事业部品牌与项目</strong></div><div className="permission-source"><span><i>项</i><b>项目经营审批人</b><small>贵州茶东南亚项目 · 至 11月30日</small></span><em>项目角色</em><strong>目标、预算和异常审批</strong></div><div className="permission-source muted"><span><i>临</i><b>贵州茶市场观察者</b><small>仅看汇总数据 · 至 9月15日</small></span><em>临时授权</em><strong>只读</strong></div></section><section className="org-section"><SectionTitle title="高风险动作影响" note="数字员工越界后将按此责任链路由"/><div className="impact-table"><div><span>预算单次上调 ＞10%</span><b>需要本人审批</b><em>2 项待处理</em></div><div><span>产品事实／认证变更</span><b>品牌审核人审批</b><em>正常</em></div><div><span>报价、折扣与独家代理</span><b>销售总监审批</b><em className="danger">责任人缺失</em></div></div></section></main>}
 
 function Summary({label,value,note,warn}:{label:string;value:string;note:string;warn?:boolean}){return <div className={warn?'summary-warn':''}><span>{label}</span><b>{value}</b><small>{note}</small></div>}
 function SectionTitle({title,note,action}:{title:string;note:string;action?:string}){return <div className="org-section-title"><div><h3>{title}</h3><p>{note}</p></div>{action&&<button onClick={()=>appFeedback('操作已响应','该操作已完成，页面状态已更新。')}>{action} →</button>}</div>}
@@ -860,6 +912,7 @@ export default function Home() {
   const [showGlobalRuns, setShowGlobalRuns] = useState(false);
   const [topDialog,setTopDialog]=useState<{title:string;desc:string}|null>(null);
   const [onboardingStage,setOnboardingStage]=useState<OnboardingStage>(null);
+  const initialOnboardingClaim=useRef<Promise<boolean>|null>(null);
   useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{title:string;desc:string}>).detail;setTopDialog(detail)};window.addEventListener('qianhai-feedback',handler);return()=>window.removeEventListener('qianhai-feedback',handler)},[]);
   useEffect(() => {
     const syncViewFromHash = () => {
@@ -874,11 +927,22 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
+    let active = true;
     const frame = window.requestAnimationFrame(() => {
       setSidebarCollapsed(window.localStorage.getItem('qianhai-sidebar-collapsed') === 'true');
-      if(window.localStorage.getItem('qianhai-onboarding-complete') !== 'true')setOnboardingStage('auth');
+      initialOnboardingClaim.current ??= claimFirstLoginOnboarding();
+      void initialOnboardingClaim.current
+        .then(shouldStartOnboarding=>{if(active&&shouldStartOnboarding)setOnboardingStage('setup')})
+        .catch(error=>{
+          if(!active)return;
+          if(error instanceof OnboardingClaimError&&error.status===401){setOnboardingStage('auth');return}
+          setTopDialog({title:'暂时无法确认新手任务',desc:'账号状态未被改写，请刷新后重试。系统不会因此重复发放新手任务。'});
+        });
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      active = false;
+      window.cancelAnimationFrame(frame);
+    };
   }, []);
   const toggleSidebar = () => {
     setSidebarCollapsed(current => {
@@ -888,7 +952,6 @@ export default function Home() {
     });
   };
   const closeOnboarding=(destination:View='home')=>{
-    window.localStorage.setItem('qianhai-onboarding-complete','true');
     setOnboardingStage(null);
     setView(destination);
   };
@@ -938,13 +1001,13 @@ export default function Home() {
       <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><button className="onboarding-replay" title="重新打开新手引导" aria-label="重新打开新手引导" onClick={()=>setOnboardingStage('setup')}>？</button></div>
     </aside>
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">黔山国际产业集团</span>{!['inquiries','workbench','revenue'].includes(view)&&<button className="switcher" onClick={()=>setTopDialog({title:'切换组织',desc:'可切换至茶与食品事业部、轮胎事业部或跨部门项目团队。'})}>切换组织⌄</button>}</div><div className="top-actions"><button className="search" onClick={()=>setTopDialog({title:'全局搜索',desc:'可搜索经营项目、内容素材和客户，目前已索引 326 条业务记录。'})}>搜索项目、内容或客户</button>{canEnterProduction&&<button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 进入生产现场 <b>8</b></button>}{!['inquiries','workbench','revenue'].includes(view)&&<><button className="agent-status" onClick={()=>setTopDialog({title:'数字员工运行状态',desc:'6 位数字员工运行正常，今日完成 128 次自主动作，7 项等待审批。'})}>AI · 6 位运行中</button><button className="notice" onClick={()=>setTopDialog({title:'通知中心',desc:'3 条未读通知：2 项预算审批和 1 项账号授权即将到期。'})}>3</button></>}</div></header>
+      <header className="topbar"><div><span className="crumb">贵州茶产业工作区</span></div><div className="top-actions"><button className="search" onClick={()=>setTopDialog({title:'全局搜索',desc:'可搜索贵州茶经营项目、内容素材和客户，目前已索引 326 条业务记录。'})}>搜索项目、内容或客户</button>{canEnterProduction&&<button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 进入生产现场 <b>8</b></button>}{!['inquiries','workbench','revenue'].includes(view)&&<><button className="agent-status" onClick={()=>setTopDialog({title:'数字员工运行状态',desc:'6 位数字员工运行正常，今日完成 128 次自主动作，7 项等待审批。'})}>AI · 6 位运行中</button><button className="notice" onClick={()=>setTopDialog({title:'通知中心',desc:'3 条未读通知：2 项预算审批和 1 项账号授权即将到期。'})}>3</button></>}</div></header>
       <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage go={go}/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<CustomerOperationsOverview onOpenWorkspace={openWorkbench} onOpenRevenueAnalysis={()=>go('revenue')}/>:view==='workbench'?<CustomerWorkbenchPage key={`${workbenchTarget.tab}-${workbenchTarget.filter}-${workbenchTarget.customerId}`} initialTab={workbenchTarget.tab} initialFilter={workbenchTarget.filter} initialCustomerId={workbenchTarget.customerId} onBack={()=>go('inquiries')}/>:view==='customerLive'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenueAnalysisPage onOpenWorkbench={openCustomerInWorkbench}/>:view==='knowledge'?<EnterpriseKnowledgePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
     </section>
     {showGlobalRuns && canEnterProduction && <GlobalAgentDesk onExit={()=>setShowGlobalRuns(false)}/>}
     {topDialog&&<ActionDialog title={topDialog.title} desc={topDialog.desc} confirm="知道了" onClose={()=>setTopDialog(null)}/>}
     <QianXiaohai view={view} onNavigate={go}/>
-    <OnboardingFlow stage={onboardingStage} onStageChange={setOnboardingStage} onSkip={()=>closeOnboarding('home')} onComplete={data=>{closeOnboarding('projects');window.dispatchEvent(new CustomEvent('qianhai-feedback',{detail:{title:'首个经营任务已创建',desc:`${data.product} · ${data.market}市场获客任务已就绪，数字员工将按“${data.autonomy}”运行。`}}))}}/>
+    <OnboardingFlow stage={onboardingStage} onStageChange={setOnboardingStage} onAuthenticate={()=>claimFirstLoginOnboarding()} onSkip={()=>closeOnboarding('home')} onComplete={data=>{closeOnboarding('projects');window.dispatchEvent(new CustomEvent('qianhai-feedback',{detail:{title:'首个经营任务已创建',desc:`${data.product} · ${data.market}市场获客任务已就绪，数字员工将按“${data.autonomy}”运行。`}}))}}/>
   </main>;
 }
 

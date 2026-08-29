@@ -1,4 +1,4 @@
-export const DEMO_SCHEMA_VERSION = 8;
+export const DEMO_SCHEMA_VERSION = 11;
 
 export const DEMO_TABLES = [
   'dataset_manifest', 'enterprises', 'products', 'enterprise_documents',
@@ -13,6 +13,7 @@ export const DEMO_TABLES = [
   'organization_user_memberships', 'durable_task_states', 'knowledge_records',
   'ui_actions', 'integration_credentials_metadata', 'security_policies',
   'organization_security_policies',
+  'tea_industry_catalog',
 ] as const;
 
 export type DemoTable = (typeof DEMO_TABLES)[number];
@@ -59,6 +60,7 @@ export const JSON_COLUMNS = {
   integration_credentials_metadata: ['scopes_json', 'metadata_json'],
   security_policies: ['config_json'],
   organization_security_policies: ['rules_json'],
+  tea_industry_catalog: ['metadata_json'],
   business_state_history: ['before_json', 'after_json'],
   business_outbox: ['payload_json'],
   workflow_runs: ['input_json', 'result_json', 'error_json'],

@@ -1,14 +1,12 @@
 import { env } from 'cloudflare:workers';
+import { withApiErrors } from '../../../lib/server/errors';
+import { createRequestContext, type RequestContext } from '../../../lib/server/request-context';
 
 type JsonObject = Record<string, unknown>;
 type D1Row = Record<string, unknown>;
 
 const JSON_HEADERS = { 'Cache-Control': 'no-store' };
 const SECRET_REF_PATTERN = /^[A-Z][A-Z0-9_]{2,127}$/;
-
-function db(): D1Database {
-  return (env as unknown as { DB: D1Database }).DB;
-}
 
 function text(value: unknown, max = 300): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -20,18 +18,6 @@ function jsonArray(value: unknown): string[] {
 
 function jsonObject(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
-}
-
-function actorFrom(request: Request) {
-  const headers = request.headers;
-  const id = headers.get('x-openai-user-id')
-    ?? headers.get('x-oai-user-id')
-    ?? headers.get('cf-access-authenticated-user-email')
-    ?? headers.get('x-openai-user-email')
-    ?? headers.get('x-oai-user-email')
-    ?? 'development-user';
-  const identitySource = id === 'development-user' ? 'development_fallback' : 'oai_identity_header';
-  return { id: id.slice(0, 200), identitySource };
 }
 
 function response(body: unknown, init?: ResponseInit) {
@@ -75,7 +61,7 @@ function safeEndpoint(value: unknown): string | null {
 
 async function audit(
   database: D1Database,
-  actor: ReturnType<typeof actorFrom>,
+  actor: { id: string; identitySource: string; organizationId: string },
   action: string,
   resourceType: string,
   resourceId: string | null,
@@ -89,12 +75,15 @@ async function audit(
     VALUES (?, ?, 'human', ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     newId('audit'), new Date().toISOString(), actor.id, action, resourceType, resourceId,
-    riskLevel, result, JSON.stringify({ ...details, identity_source: actor.identitySource }),
+    riskLevel, result, JSON.stringify({
+      ...details,
+      identity_source: actor.identitySource,
+      organization_id: actor.organizationId,
+    }),
   ).run();
 }
 
-async function snapshot() {
-  const database = db();
+async function snapshot(database: D1Database, organization: RequestContext['organization']) {
   const results = await database.batch([
     database.prepare(`
       SELECT n.id, n.name, n.node_type, n.parent_id, n.owner_member_id, n.data_boundary,
@@ -161,8 +150,11 @@ async function snapshot() {
   const auditEvents = rows(9);
   const connected = integrations.filter((item) => item.status === 'connected').length;
   const needsConfiguration = integrations.filter((item) => item.status === 'needs_configuration').length;
-  const syncSuccess = syncRuns.length
-    ? Math.round((syncRuns.filter((item) => item.status === 'success').length / syncRuns.length) * 1000) / 10
+  const completedSyncRuns = syncRuns.filter((item) => item.status === 'success' || item.status === 'failed');
+  const unsupportedSyncRuns = syncRuns.filter((item) => item.status === 'unsupported').length;
+  const queuedSyncRuns = syncRuns.filter((item) => item.status === 'queued').length;
+  const syncSuccess = completedSyncRuns.length
+    ? Math.round((completedSyncRuns.filter((item) => item.status === 'success').length / completedSyncRuns.length) * 1000) / 10
     : 0;
   const openQualityCount = qualityIssues
     .filter((item) => item.status !== 'resolved' && item.status !== 'ignored')
@@ -171,6 +163,13 @@ async function snapshot() {
   return {
     ok: true,
     generatedAt: new Date().toISOString(),
+    organization: {
+      id: organization.id,
+      enterpriseId: organization.enterpriseId,
+      slug: organization.slug,
+      name: organization.name,
+      membershipRoleId: organization.membershipRoleId,
+    },
     organizationNodes: rows(0),
     members: rows(1),
     roles: rows(2),
@@ -193,6 +192,8 @@ async function snapshot() {
       integrationsTotal: integrations.length,
       needsConfiguration,
       syncSuccess,
+      unsupportedSyncRuns,
+      queuedSyncRuns,
       openQualityCount,
       policiesEnabled: rows(8).filter((item) => Number(item.enabled) === 1).length,
       highRiskOpen: auditEvents.filter((item) => item.risk_level === 'high' && !item.disposition).length,
@@ -200,7 +201,21 @@ async function snapshot() {
     health: [
       { id: 'api', name: 'Web 应用与 API', metric: 'D1 查询成功', status: 'healthy', label: '正常' },
       { id: 'connectors', name: '数据连接器', metric: `${connected} 已连接 · ${needsConfiguration} 待配置`, status: needsConfiguration ? 'warning' : 'healthy', label: needsConfiguration ? '需要配置' : '正常' },
-      { id: 'sync', name: '同步运行', metric: syncRuns.length ? `最近成功率 ${syncSuccess}%` : '暂无运行', status: syncRuns.some((item) => item.status === 'failed') ? 'warning' : 'healthy', label: syncRuns.some((item) => item.status === 'failed') ? '存在失败' : '正常' },
+      {
+        id: 'sync',
+        name: '同步运行',
+        metric: syncRuns.some((item) => item.status === 'failed')
+          ? `最近成功率 ${syncSuccess}%`
+          : unsupportedSyncRuns
+            ? `${unsupportedSyncRuns} 次操作不支持`
+            : queuedSyncRuns
+              ? `${queuedSyncRuns} 个任务排队中`
+              : syncRuns.length ? `最近成功率 ${syncSuccess}%` : '暂无运行',
+        status: syncRuns.some((item) => item.status === 'failed') || unsupportedSyncRuns || queuedSyncRuns ? 'warning' : 'healthy',
+        label: syncRuns.some((item) => item.status === 'failed')
+          ? '存在失败'
+          : unsupportedSyncRuns ? '尚未支持' : queuedSyncRuns ? '排队中' : '正常',
+      },
       { id: 'quality', name: '数据质量', metric: `${openQualityCount} 条待处理`, status: openQualityCount ? 'warning' : 'healthy', label: openQualityCount ? '待处理' : '正常' },
       { id: 'audit', name: '审计与日志', metric: `${auditEvents.length} 条最近事件`, status: 'healthy', label: '正常' },
       { id: 'database', name: '平台数据库', metric: '读写绑定已响应', status: 'healthy', label: '正常' },
@@ -208,17 +223,24 @@ async function snapshot() {
   };
 }
 
-export async function GET() {
-  try {
-    return response(await snapshot());
-  } catch (cause) {
-    console.error('platform snapshot failed', cause);
-    return error('platform_database_unavailable', '平台治理数据库尚未就绪，请先应用最新 D1 migration。', 503);
-  }
+export async function GET(request: Request) {
+  return withApiErrors(async (requestId) => {
+    const context = await createRequestContext(request, { requestId });
+    try {
+      return response(await snapshot(context.db, context.organization));
+    } catch (cause) {
+      console.error('platform snapshot failed', cause);
+      return error('platform_database_unavailable', '平台治理数据库尚未就绪，请先应用最新 D1 migration。', 503);
+    }
+  }, request.headers.get('x-request-id') ?? crypto.randomUUID());
 }
 
-export async function POST(request: Request) {
-  const actor = actorFrom(request);
+async function handlePost(request: Request, context: RequestContext) {
+  const actor = {
+    id: context.actor.userId,
+    identitySource: context.actor.source,
+    organizationId: context.organization.id,
+  };
   let body: JsonObject;
   try {
     body = jsonObject(await request.json());
@@ -231,7 +253,8 @@ export async function POST(request: Request) {
 
   const action = text(body.action, 80);
   const payload = jsonObject(body.payload);
-  const database = db();
+  const database = context.db;
+  const scopedSnapshot = () => snapshot(database, context.organization);
 
   try {
     if (action === 'organization.save') {
@@ -338,7 +361,9 @@ export async function POST(request: Request) {
       await database.prepare(`
         INSERT INTO integrations (id, name, integration_type, environment, status, scopes_json, records_count)
         VALUES (?, ?, ?, 'production', 'needs_configuration', ?, 0)
-        ON CONFLICT(id) DO UPDATE SET name=excluded.name, integration_type=excluded.integration_type, scopes_json=excluded.scopes_json
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, integration_type=excluded.integration_type,
+          scopes_json=excluded.scopes_json, status='needs_configuration',
+          error_message='连接配置已更新，等待真实连接测试'
       `).bind(id, name, integrationType, JSON.stringify(scopes)).run();
       await database.prepare(`
         INSERT INTO integration_configs
@@ -352,16 +377,40 @@ export async function POST(request: Request) {
       `).bind(id, endpoint, authMethod, secretRef, text(payload.syncDirection, 60) || 'read_only', JSON.stringify(jsonArray(payload.syncScopes)), text(payload.scheduleText, 100) || null, actor.id).run();
 
       if (action === 'integration.save') {
-        await audit(database, actor, action, 'integration', id, 'success', { configured: Boolean(secretRef), auth_method: authMethod }, 'medium');
-        return response({ ok: true, id, status: secretRef ? 'configuration_saved' : 'needs_configuration', message: secretRef ? '连接设置已保存，可继续测试连接。' : '连接设置已保存，但仍需配置服务端凭证引用。', snapshot: await snapshot() });
+        await audit(database, actor, action, 'integration', id, 'needs_configuration', { configured: Boolean(secretRef), auth_method: authMethod }, 'medium');
+        return response({
+          ok: true,
+          id,
+          status: 'needs_configuration',
+          configurationSaved: true,
+          testRequired: true,
+          message: secretRef
+            ? '连接设置已保存，但在真实连接测试通过前不会标记为已连接。'
+            : '连接设置已保存，但仍需配置服务端凭证引用。',
+          snapshot: await snapshot(),
+        });
       }
 
       const binding = secretRef ? (env as unknown as Record<string, unknown>)[secretRef] : undefined;
       if (!secretRef || typeof binding !== 'string' || !binding || !endpoint) {
+        const missing = [
+          !endpoint ? 'endpoint_url' : null,
+          !secretRef ? 'secret_ref' : null,
+          secretRef && (typeof binding !== 'string' || !binding) ? `server_secret:${secretRef}` : null,
+        ].filter((item): item is string => Boolean(item));
         await database.prepare("UPDATE integrations SET status='needs_configuration', error_message=? WHERE id=?")
           .bind(!endpoint ? '需要配置 HTTPS 连接地址' : '服务端环境变量凭证未配置', id).run();
         await audit(database, actor, action, 'integration', id, 'needs_configuration', { endpoint_configured: Boolean(endpoint), secret_ref_configured: Boolean(secretRef) }, 'medium');
-        return response({ ok: true, id, status: 'needs_configuration', message: !endpoint ? '请先配置真实 HTTPS 连接地址。' : `服务端尚未配置 ${secretRef} 环境变量，未执行外部连接测试。`, snapshot: await snapshot() });
+        return response({
+          ok: false,
+          id,
+          status: 'needs_configuration',
+          error: 'integration_needs_configuration',
+          missing,
+          testAttempted: false,
+          message: !endpoint ? '请先配置真实 HTTPS 连接地址。' : `服务端尚未配置 ${secretRef} 环境变量，未执行外部连接测试。`,
+          snapshot: await snapshot(),
+        }, { status: 409 });
       }
 
       let connectionStatus = 'failed';
@@ -386,7 +435,18 @@ export async function POST(request: Request) {
       await database.prepare('UPDATE integrations SET status=?, error_message=?, last_sync_at=? WHERE id=?')
         .bind(connectionStatus, connectionStatus === 'connected' ? null : connectionMessage, connectionStatus === 'connected' ? new Date().toISOString() : null, id).run();
       await audit(database, actor, action, 'integration', id, connectionStatus, { endpoint_host: new URL(endpoint).hostname }, connectionStatus === 'connected' ? 'low' : 'medium');
-      return response({ ok: true, id, status: connectionStatus, message: connectionMessage, snapshot: await snapshot() });
+      if (connectionStatus === 'failed') {
+        return response({
+          ok: false,
+          id,
+          status: 'failed',
+          error: 'integration_connection_failed',
+          testAttempted: true,
+          message: connectionMessage,
+          snapshot: await snapshot(),
+        }, { status: 502 });
+      }
+      return response({ ok: true, id, status: 'connected', testAttempted: true, message: connectionMessage, snapshot: await snapshot() });
     }
 
     if (action === 'sync.run') {
@@ -404,16 +464,26 @@ export async function POST(request: Request) {
         ON CONFLICT(id) DO UPDATE SET name=excluded.name, source_type=excluded.source_type
       `).bind(sourceId, String(config.name), String(config.integration_type)).run();
       const runId = newId('sync');
-      const secretRef = typeof config.secret_ref === 'string' ? config.secret_ref : '';
-      const binding = secretRef ? (env as unknown as Record<string, unknown>)[secretRef] : undefined;
-      const ready = Boolean(config.endpoint_url) && typeof binding === 'string' && Boolean(binding);
-      const runStatus = ready ? 'queued' : 'needs_configuration';
+      const runStatus = 'unsupported';
       await database.prepare(`
         INSERT INTO sync_runs (id, source_id, started_at, completed_at, status, inserted_count, updated_count, error_count, details_json)
         VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?)
-      `).bind(runId, sourceId, new Date().toISOString(), ready ? null : new Date().toISOString(), runStatus, JSON.stringify({ integration_id: integrationId, reason: ready ? 'queued_for_connector_worker' : 'missing_server_configuration' })).run();
+      `).bind(runId, sourceId, new Date().toISOString(), new Date().toISOString(), runStatus, JSON.stringify({
+        integration_id: integrationId,
+        reason: 'connector_worker_not_implemented',
+        retryable: false,
+      })).run();
       await audit(database, actor, action, 'sync_run', runId, runStatus, { integration_id: integrationId }, 'medium');
-      return response({ ok: true, status: runStatus, runId, message: ready ? '同步任务已进入服务端队列。' : '真实凭证或连接地址尚未配置，未启动同步。', snapshot: await snapshot() });
+      return response({
+        ok: false,
+        status: runStatus,
+        error: 'connector_worker_not_implemented',
+        runId,
+        integrationId,
+        retryable: false,
+        message: '当前版本尚未实现连接器同步 Worker，未创建伪队列任务；本次尝试已作为 unsupported 运行记录留痕。',
+        snapshot: await snapshot(),
+      }, { status: 501 });
     }
 
     if (action === 'quality.resolve') {
@@ -484,4 +554,11 @@ export async function POST(request: Request) {
     try { await audit(database, actor, action || 'unknown', 'platform', null, 'failed', {}, 'high'); } catch { /* database may be unavailable */ }
     return error('platform_action_failed', '服务端未能完成操作，未返回假成功。请检查 D1 migration 与请求数据。', 500);
   }
+}
+
+export async function POST(request: Request) {
+  return withApiErrors(async (requestId) => {
+    const context = await createRequestContext(request, { requestId });
+    return handlePost(request, context);
+  }, request.headers.get('x-request-id') ?? crypto.randomUUID());
 }

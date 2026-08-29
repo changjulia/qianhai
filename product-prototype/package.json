@@ -9,8 +9,11 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test:backend:e2e": "bash scripts/test-backend-e2e.sh"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-backend --ignore-pattern .next",
+    "build:backend": "vite build --config vite.backend.config.ts",
+    "start:backend": "node dist-backend/server.mjs",
+    "test:backend:http": "npm run build:backend && node scripts/test-backend-http.mjs",
+    "test:backend:e2e:legacy": "bash scripts/test-backend-e2e.sh"
   },
   "dependencies": {
     "next": "16.3.3",

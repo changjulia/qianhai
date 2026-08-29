@@ -73,6 +73,9 @@ export async function withApiErrors(
     response.headers.set('X-Request-Id', requestId);
     return response;
   } catch (error) {
+    if (!(error instanceof ApiError)) {
+      console.error(`[${requestId}] API handler failed`, error);
+    }
     const response = errorResponse(error, requestId);
     response.headers.set('X-Request-Id', requestId);
     return response;

@@ -1,0 +1,821 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "贵州茶行业 Mock 与开放素材清单",
+    "description": "贵州茶演示账号的企业、行业、产品、买家、内容与开放媒体目录。",
+    "generatedAt": "2026-08-29T18:17:26.873Z",
+    "filters": [],
+    "cards": [],
+    "charts": [
+      {
+        "id": "coverage_chart",
+        "title": "目录条目构成",
+        "subtitle": "按真实性分类和条目类型统计，共35条",
+        "type": "bar",
+        "dataset": "coverage",
+        "sourceId": "tea_catalog_db",
+        "valueFormat": "number",
+        "encodings": {
+          "x": {
+            "field": "label",
+            "type": "nominal",
+            "label": "目录类型"
+          },
+          "y": {
+            "field": "count",
+            "type": "quantitative",
+            "label": "条目数量"
+          }
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "coverage_table",
+        "title": "目录覆盖",
+        "subtitle": "按真实性分类和条目类型统计，共35条",
+        "dataset": "coverage",
+        "sourceId": "tea_catalog_db",
+        "defaultSort": {
+          "field": "classification",
+          "direction": "asc"
+        },
+        "columns": [
+          {
+            "field": "classification",
+            "label": "真实性分类",
+            "type": "text"
+          },
+          {
+            "field": "type",
+            "label": "条目类型",
+            "type": "text"
+          },
+          {
+            "field": "count",
+            "label": "数量",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "media_table",
+        "title": "开放许可真实媒体",
+        "subtitle": "10条视频与10张图片；仅3张都匀图片标记为贵州实拍",
+        "dataset": "media",
+        "sourceId": "tea_catalog_db",
+        "defaultSort": {
+          "field": "type",
+          "direction": "desc"
+        },
+        "columns": [
+          {
+            "field": "type",
+            "label": "类型",
+            "type": "text"
+          },
+          {
+            "field": "title",
+            "label": "标题",
+            "type": "text"
+          },
+          {
+            "field": "category",
+            "label": "场景",
+            "type": "text"
+          },
+          {
+            "field": "geography",
+            "label": "地域范围",
+            "type": "text"
+          },
+          {
+            "field": "license",
+            "label": "许可",
+            "type": "text"
+          },
+          {
+            "field": "quality",
+            "label": "质量分",
+            "format": "number"
+          },
+          {
+            "field": "local_path",
+            "label": "本地路径",
+            "type": "text"
+          },
+          {
+            "field": "source",
+            "label": "来源页",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "mock_table",
+        "title": "贵州茶 Mock 经营条目",
+        "subtitle": "企业、行业、产品、买家、内容和投放数据，全部显式标记 Mock",
+        "dataset": "mocks",
+        "sourceId": "tea_catalog_db",
+        "defaultSort": {
+          "field": "type",
+          "direction": "asc"
+        },
+        "columns": [
+          {
+            "field": "type",
+            "label": "类型",
+            "type": "text"
+          },
+          {
+            "field": "title",
+            "label": "名称",
+            "type": "text"
+          },
+          {
+            "field": "category",
+            "label": "分类",
+            "type": "text"
+          },
+          {
+            "field": "geography",
+            "label": "地域",
+            "type": "text"
+          },
+          {
+            "field": "quality",
+            "label": "质量分",
+            "format": "number"
+          },
+          {
+            "field": "notice",
+            "label": "真实性说明",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "tea_catalog_db",
+        "label": "本地 D1 贵州茶目录",
+        "path": "migrations/0013_guizhou_tea_catalog.sql"
+      },
+      {
+        "id": "open_media_manifest",
+        "label": "开放媒体来源与哈希清单",
+        "path": "public/demo/tea-media/manifest.json"
+      },
+      {
+        "id": "catalog_e2e",
+        "label": "贵州茶目录全链路测试",
+        "path": "scripts/test-tea-catalog-e2e.mjs"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# 贵州茶行业 Mock 与开放素材清单"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "body": "## Executive Summary\n\n- **目录已形成可用闭环。** 当前共 35 条：20 条开放许可真实媒体和 15 条明确标记的 Mock 经营数据。\n- **媒体不混淆地域。** 3 张图片为贵州都匀实拍；其余视频和图片仅标记为茶行业通用参考，不代表贵州本地或当前企业。\n- **联调结果可信。** 20 个文件已逐一核对 SHA-256、来源和许可，数据库、API、筛选与静态媒体 URL 均通过本地自动测试。\n- **尚未证明远程生产可用。** 本次没有推送仓库或执行远程 D1 迁移。"
+      },
+      {
+        "id": "coverage_heading",
+        "type": "markdown",
+        "body": "## 目录已经覆盖演示所需的核心对象\n\n企业、行业、产品、买家、内容任务和投放项目由 Mock 数据补齐；真实媒体单独使用 `open_media` 分类。这样前端可以组合演示，但不会把模拟经营数据当成现实事实。"
+      },
+      {
+        "id": "coverage_chart_block",
+        "type": "chart",
+        "chartId": "coverage_chart"
+      },
+      {
+        "id": "coverage",
+        "type": "table",
+        "tableId": "coverage_table"
+      },
+      {
+        "id": "media_heading",
+        "type": "markdown",
+        "body": "## 20 条真实媒体都有可追溯许可\n\n每条媒体都保存 Commons 来源页、作者、许可、本地路径与 SHA-256。使用时必须保留署名，并根据地域字段展示“贵州都匀实拍”或“茶行业通用参考”。"
+      },
+      {
+        "id": "media",
+        "type": "table",
+        "tableId": "media_table"
+      },
+      {
+        "id": "mock_heading",
+        "type": "markdown",
+        "body": "## 15 条 Mock 数据补足经营演示而不冒充事实\n\nMock 条目覆盖企业、产业链、五类产品、三类买家、四项内容任务和一个东南亚市场验证项目。交易参数、预算、询盘和认证状态均不得对外当作真实承诺。"
+      },
+      {
+        "id": "mocks",
+        "type": "table",
+        "tableId": "mock_table"
+      },
+      {
+        "id": "quality_heading",
+        "type": "markdown",
+        "body": "## 本地全链路已经通过，远程环境仍需单独验收\n\n自动测试覆盖目录数量、真实性标签、来源完整性、哈希、API 筛选、错误输入和 20 个媒体 HTTP 响应。该证据只适用于当前本地工作区。"
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## 推荐下一步\n\n1. 在内容生成与素材选择界面强制显示地域标签和许可署名。\n2. 将质量分低于 85 的 Mock 条目拦截在发布审批前。\n3. 推送后在同一提交 SHA 上执行远程 D1 迁移与预览环境回归，再决定是否用于明天的演示。"
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## Further Questions\n\n- 明天演示是否需要把视频转码为 MP4，以兼容不支持 WebM 的浏览器？\n- 是否需要继续补采贵州本地加工、包装和茶艺视频，以减少行业通用素材占比？"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats and Assumptions\n\n- 开放许可允许复用不等于无需署名，具体使用仍受每条文件许可约束。\n- “真实媒体”只表示文件及其来源真实，不证明 Demo 企业拥有画面中的茶园、工厂、人员或产能。\n- Mock 质量分用于目录完整度排序，不代表市场效果或真实转化率。"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-29T18:17:26.873Z",
+    "status": "ready",
+    "datasets": {
+      "coverage": [
+        {
+          "classification": "Mock经营数据",
+          "type": "buyer_persona",
+          "label": "Mock / buyer_persona",
+          "count": 3
+        },
+        {
+          "classification": "Mock经营数据",
+          "type": "campaign",
+          "label": "Mock / campaign",
+          "count": 1
+        },
+        {
+          "classification": "Mock经营数据",
+          "type": "content_brief",
+          "label": "Mock / content_brief",
+          "count": 4
+        },
+        {
+          "classification": "Mock经营数据",
+          "type": "enterprise",
+          "label": "Mock / enterprise",
+          "count": 1
+        },
+        {
+          "classification": "Mock经营数据",
+          "type": "industry",
+          "label": "Mock / industry",
+          "count": 1
+        },
+        {
+          "classification": "Mock经营数据",
+          "type": "product",
+          "label": "Mock / product",
+          "count": 5
+        },
+        {
+          "classification": "开放许可真实媒体",
+          "type": "image",
+          "label": "真实媒体 / image",
+          "count": 10
+        },
+        {
+          "classification": "开放许可真实媒体",
+          "type": "video",
+          "label": "真实媒体 / video",
+          "count": 10
+        }
+      ],
+      "media": [
+        {
+          "id": "image-duyun-tea-farm-01",
+          "type": "图片",
+          "title": "都匀牛场茶场 - panoramio.jpg",
+          "category": "贵州茶园",
+          "geography": "贵州都匀实拍",
+          "license": "CC BY 3.0",
+          "author": "kuaimei",
+          "quality": 96,
+          "source": "https://commons.wikimedia.org/wiki/File%3A%E9%83%BD%E5%8C%80%E7%89%9B%E5%9C%BA%E8%8C%B6%E5%9C%BA_-_panoramio.jpg",
+          "local_path": "/demo/tea-media/image-duyun-tea-farm-01.jpg",
+          "sha256": "b636f40b96f8326c24db563f7402623bb45882d8edbbcae3d30904911fc6d034",
+          "notice": "开放许可的贵州都匀实拍，可按署名许可用作地点素材。"
+        },
+        {
+          "id": "image-duyun-tea-farm-02",
+          "type": "图片",
+          "title": "都匀牛场茶场 - panoramio (1).jpg",
+          "category": "贵州茶园",
+          "geography": "贵州都匀实拍",
+          "license": "CC BY 3.0",
+          "author": "kuaimei",
+          "quality": 96,
+          "source": "https://commons.wikimedia.org/wiki/File%3A%E9%83%BD%E5%8C%80%E7%89%9B%E5%9C%BA%E8%8C%B6%E5%9C%BA_-_panoramio_(1).jpg",
+          "local_path": "/demo/tea-media/image-duyun-tea-farm-02.jpg",
+          "sha256": "89f25c52da3a2115165d5f8234021e4e6791a8bd7b0e2dc5b1d9bf795bb107b7",
+          "notice": "开放许可的贵州都匀实拍，可按署名许可用作地点素材。"
+        },
+        {
+          "id": "image-duyun-tea-farm-03",
+          "type": "图片",
+          "title": "都匀牛场茶场 - panoramio (2).jpg",
+          "category": "贵州茶园",
+          "geography": "贵州都匀实拍",
+          "license": "CC BY 3.0",
+          "author": "kuaimei",
+          "quality": 96,
+          "source": "https://commons.wikimedia.org/wiki/File%3A%E9%83%BD%E5%8C%80%E7%89%9B%E5%9C%BA%E8%8C%B6%E5%9C%BA_-_panoramio_(2).jpg",
+          "local_path": "/demo/tea-media/image-duyun-tea-farm-03.jpg",
+          "sha256": "edeaad0bbb66d5479b92770eac35d2b45db26916ffb75160afa81bc9bb4a28fc",
+          "notice": "开放许可的贵州都匀实拍，可按署名许可用作地点素材。"
+        },
+        {
+          "id": "image-bi-luochun",
+          "type": "图片",
+          "title": "Bi Luochun.jpg",
+          "category": "茶叶产品",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 3.0",
+          "author": "Template:Windbell",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ABi_Luochun.jpg",
+          "local_path": "/demo/tea-media/image-bi-luochun.jpg",
+          "sha256": "f5d8c57f70698d0fa237962f21a3f96838e258ea9eae4fb4a382a2e406380de4",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-china-tea-fields",
+          "type": "图片",
+          "title": "Fields of tea.jpg",
+          "category": "中国茶园",
+          "geography": "茶行业通用参考",
+          "license": "CC BY 2.0",
+          "author": "Robbie Sproule from Montreal, Canada",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AFields_of_tea.jpg",
+          "local_path": "/demo/tea-media/image-china-tea-fields.jpg",
+          "sha256": "faece98b0de1eb6ebbca8f5b8ed3a7351347bfdf4a8b4fc9cb75055be93d251e",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-dragon-well-plantation",
+          "type": "图片",
+          "title": "Dragon Well Tea Plantation (25876276577).jpg",
+          "category": "中国茶园",
+          "geography": "茶行业通用参考",
+          "license": "CC BY 2.0",
+          "author": "David Stanley from Nanaimo, Canada",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ADragon_Well_Tea_Plantation_(25876276577).jpg",
+          "local_path": "/demo/tea-media/image-dragon-well-plantation.jpg",
+          "sha256": "3f41bdb03f6880b3bc68a3bacbf8fc335c68735e09bdf40d6e7d6e1ae83cbabc",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-tea-fields-buddhist",
+          "type": "图片",
+          "title": "Tea fields in front of Buddhist symbols.jpg",
+          "category": "茶园景观",
+          "geography": "茶行业通用参考",
+          "license": "CC BY 2.0",
+          "author": "Taco Witte",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea_fields_in_front_of_Buddhist_symbols.jpg",
+          "local_path": "/demo/tea-media/image-tea-fields-buddhist.jpg",
+          "sha256": "a924470e7dbcb8d88fa55960de55be25a3cfdc92a737be7d370a9b9f593f5557",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-tea-grower-hangzhou",
+          "type": "图片",
+          "title": "Tea-grower-hangzhou.jpg",
+          "category": "采茶人物",
+          "geography": "茶行业通用参考",
+          "license": "Public domain",
+          "author": "JalalV",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea-grower-hangzhou.jpg",
+          "local_path": "/demo/tea-media/image-tea-grower-hangzhou.jpg",
+          "sha256": "efd31ec68c9582b5bbf86443286fda3b093cbf53247f1dc64aab31ce0873f121",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-tea-processing-diagram",
+          "type": "图片",
+          "title": "TeaprocessingZh-small.png",
+          "category": "加工知识图",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 3.0",
+          "author": "Teaprocessing-small.png: sjschen\nderivative work: sjschen",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATeaprocessingZh-small.png",
+          "local_path": "/demo/tea-media/image-tea-processing-diagram.png",
+          "sha256": "0c62548ac62e2c5d53bf00896de91253f5d58ba71bafeea1b976b2f6d4f7ebeb",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "image-wuyishan-plantation",
+          "type": "图片",
+          "title": "China Wuyishan Tea Plantation.jpg",
+          "category": "中国茶园",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Lennartbj",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AChina_Wuyishan_Tea_Plantation.jpg",
+          "local_path": "/demo/tea-media/image-wuyishan-plantation.jpg",
+          "sha256": "fed50d58fe2433dca9bf0cae4354d1c2fef6b247757d2a5f72d25e4ca4e77345",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-assam-garden",
+          "type": "视频",
+          "title": "Tea garden Assam India.webm",
+          "category": "茶园环境",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Joy sagar Murmu",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea_garden_Assam_India.webm",
+          "local_path": "/demo/tea-media/video-assam-garden.webm",
+          "sha256": "b1e6a53ee2c0558025e7f111a5596d85299c1dd46b22667bf8db1408dc370949",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-dibrugarh-estates",
+          "type": "视频",
+          "title": "Tea estates, Dibrugarh district, Assam.webm",
+          "category": "茶园环境",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 3.0",
+          "author": "Subhashish Panigrahi",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea_estates%2C_Dibrugarh_district%2C_Assam.webm",
+          "local_path": "/demo/tea-media/video-dibrugarh-estates.webm",
+          "sha256": "580252edc48884ab38669b5477eadf4cf8de3d91ace08b3980c6c37318bbcb78",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-driving-assam-estate",
+          "type": "视频",
+          "title": "Driving through tea estate, Kinsukia, Assam, India.webm",
+          "category": "茶园环境",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 3.0",
+          "author": "Subhashish Panigrahi",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ADriving_through_tea_estate%2C_Kinsukia%2C_Assam%2C_India.webm",
+          "local_path": "/demo/tea-media/video-driving-assam-estate.webm",
+          "sha256": "ac30b8d7bdd689a221b206683ad2306bc98c60fd4eb4c2d9fb1ccce7b8b72903",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-jalpaiguri-garden",
+          "type": "视频",
+          "title": "Tea Garden view near Jalpaiguri, North West Bengal.webm",
+          "category": "茶园环境",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Rajani Gairshail",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea_Garden_view_near_Jalpaiguri%2C_North_West_Bengal.webm",
+          "local_path": "/demo/tea-media/video-jalpaiguri-garden.webm",
+          "sha256": "df04ee150eaaef3b3b632f70ccedb63f5993431fb2941ffbd861b88a10d1be1a",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-matcha-latte",
+          "type": "视频",
+          "title": "Matcha latte whisking.webm",
+          "category": "消费应用",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Based5290",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AMatcha_latte_whisking.webm",
+          "local_path": "/demo/tea-media/video-matcha-latte.webm",
+          "sha256": "e207a3bd407aa77923ed2c362446309b3dbe98fb30fc5ed2b2a4b4c9cdf6a081",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-moroccan-tea",
+          "type": "视频",
+          "title": "How Nomads prepare Moroccan tea.webm",
+          "category": "消费文化",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "مصطفى ملو",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AHow_Nomads_prepare_Moroccan_tea.webm",
+          "local_path": "/demo/tea-media/video-moroccan-tea.webm",
+          "sha256": "d029b1f55a3652e08b25e7984e8f4ad95063dcdefc2380bc0367f28d7053edfb",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-oodaleah-estate",
+          "type": "视频",
+          "title": "Oodaleah Tea Estate.webm",
+          "category": "茶园环境",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Owais Al Qarni",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AOodaleah_Tea_Estate.webm",
+          "local_path": "/demo/tea-media/video-oodaleah-estate.webm",
+          "sha256": "cd6400527d8cecbdf4109d4abb105212608ac8508005b31ed9bbe2e3f72d162d",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-tea-leaf-process",
+          "type": "视频",
+          "title": "Coffee Bean & Tea Leaf Process.webm",
+          "category": "加工流程",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 3.0",
+          "author": "Kelliks",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ACoffee_Bean_%26_Tea_Leaf_Process.webm",
+          "local_path": "/demo/tea-media/video-tea-leaf-process.webm",
+          "sha256": "8639b40667ea34819a036a8be93d9b5682395344ab0803a92bf26fc1882b63cf",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-tea-picking-nuwara",
+          "type": "视频",
+          "title": "Tea picking in Nuwara Eliya VID-20221103-WA0015.webm",
+          "category": "鲜叶采摘",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "Muunaa-Selva",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3ATea_picking_in_Nuwara_Eliya_VID-20221103-WA0015.webm",
+          "local_path": "/demo/tea-media/video-tea-picking-nuwara.webm",
+          "sha256": "5d39d361ad9c5a52625b0aa0d4faa598a11eb18f51309d95fe052ae940996fa2",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        },
+        {
+          "id": "video-uganda-plantation",
+          "type": "视频",
+          "title": "A closeup on the tea plantation in Western Uganda.webm",
+          "category": "茶树近景",
+          "geography": "茶行业通用参考",
+          "license": "CC BY-SA 4.0",
+          "author": "B722N",
+          "quality": 90,
+          "source": "https://commons.wikimedia.org/wiki/File%3AA_closeup_on_the_tea_plantation_in_Western_Uganda.webm",
+          "local_path": "/demo/tea-media/video-uganda-plantation.webm",
+          "sha256": "a801bb47f8dc600225df8dbd0b9cd6b159122e9bef653c6300c732e467c7604f",
+          "notice": "开放许可的茶行业通用参考，不代表贵州本地、当前企业或其生产能力。"
+        }
+      ],
+      "mocks": [
+        {
+          "id": "mock-buyer-cafe-chain",
+          "type": "buyer_persona",
+          "title": "咖啡与新茶饮连锁",
+          "category": "采购角色",
+          "geography": "东南亚",
+          "quality": 86,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟买家画像，用于菜单测试和样品流程。"
+        },
+        {
+          "id": "mock-buyer-importer",
+          "type": "buyer_persona",
+          "title": "食品原料进口商",
+          "category": "采购角色",
+          "geography": "东南亚",
+          "quality": 86,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟买家画像，用于资格判断和内容选题。"
+        },
+        {
+          "id": "mock-buyer-distributor",
+          "type": "buyer_persona",
+          "title": "区域茶叶经销商",
+          "category": "渠道角色",
+          "geography": "东南亚",
+          "quality": 84,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟买家画像，不代表真实客户。"
+        },
+        {
+          "id": "mock-campaign-sea",
+          "type": "campaign",
+          "title": "贵州茶东南亚市场验证",
+          "category": "增长任务",
+          "geography": "马来西亚/新加坡",
+          "quality": 88,
+          "status": "schema_validated_mock",
+          "notice": "Mock：预算、流量、询盘和成交指标全部为 Demo。"
+        },
+        {
+          "id": "mock-content-quality",
+          "type": "content_brief",
+          "title": "海外买家验厂五项清单",
+          "category": "内容任务",
+          "geography": "东南亚",
+          "quality": 93,
+          "status": "schema_validated_mock",
+          "notice": "Mock：质量、认证和产能字段均需企业人工确认。"
+        },
+        {
+          "id": "mock-content-harvest",
+          "type": "content_brief",
+          "title": "一芽一叶采摘流程短视频",
+          "category": "内容任务",
+          "geography": "行业通用",
+          "quality": 91,
+          "status": "schema_validated_mock",
+          "notice": "Mock：用开放行业视频解释流程，必须显示“行业参考画面”。"
+        },
+        {
+          "id": "mock-content-origin",
+          "type": "content_brief",
+          "title": "贵州茶产地故事图文",
+          "category": "内容任务",
+          "geography": "贵州",
+          "quality": 91,
+          "status": "schema_validated_mock",
+          "notice": "Mock：引用开放图片时必须按许可署名；不得把行业素材说成企业自有茶园。"
+        },
+        {
+          "id": "mock-content-processing",
+          "type": "content_brief",
+          "title": "绿茶加工节点知识卡",
+          "category": "内容任务",
+          "geography": "行业通用",
+          "quality": 90,
+          "status": "schema_validated_mock",
+          "notice": "Mock：依据开放加工流程图制作，不宣称具体企业采用相同工艺。"
+        },
+        {
+          "id": "mock-enterprise-profile",
+          "type": "enterprise",
+          "title": "贵州茶产业演示企业",
+          "category": "企业主体",
+          "geography": "贵州",
+          "quality": 92,
+          "status": "schema_validated_mock",
+          "notice": "Mock：用于演示企业资料、团队、权限和增长任务，不对应真实企业。"
+        },
+        {
+          "id": "mock-industry-profile",
+          "type": "industry",
+          "title": "贵州茶行业经营画像",
+          "category": "产业画像",
+          "geography": "贵州",
+          "quality": 90,
+          "status": "schema_validated_mock",
+          "notice": "Mock：覆盖种植、初制、精制、品牌和出口场景；规模、份额和经营指标不得当作真实统计。"
+        },
+        {
+          "id": "mock-product-matcha-drink",
+          "type": "product",
+          "title": "贵州饮品级抹茶 M-02",
+          "category": "抹茶产品",
+          "geography": "贵州",
+          "quality": 90,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟产品与交易参数，不代表任何企业真实产能或认证。"
+        },
+        {
+          "id": "mock-product-matcha-food",
+          "type": "product",
+          "title": "贵州食品级抹茶 M-01",
+          "category": "抹茶产品",
+          "geography": "贵州",
+          "quality": 90,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟产品与交易参数，不代表任何企业真实产能或认证。"
+        },
+        {
+          "id": "mock-product-green-tea",
+          "type": "product",
+          "title": "都匀毛尖出口装 Demo",
+          "category": "绿茶产品",
+          "geography": "贵州",
+          "quality": 88,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟规格、包装与报价参数，产品名称仅用于行业演示。"
+        },
+        {
+          "id": "mock-product-cold-brew",
+          "type": "product",
+          "title": "贵州冷泡茶原料 Demo",
+          "category": "茶饮原料",
+          "geography": "贵州",
+          "quality": 84,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟配方应用和买家沟通场景。"
+        },
+        {
+          "id": "mock-product-tea-bag",
+          "type": "product",
+          "title": "贵州绿茶袋泡茶 Demo",
+          "category": "消费茶产品",
+          "geography": "贵州",
+          "quality": 84,
+          "status": "schema_validated_mock",
+          "notice": "Mock：模拟零售产品、包装和渠道定位。"
+        }
+      ],
+      "checks": [
+        {
+          "check": "目录总量",
+          "result": "通过",
+          "evidence": "35 条，API 与数据库汇总一致"
+        },
+        {
+          "check": "真实视频数量",
+          "result": "通过",
+          "evidence": "10 条，全部下载、哈希和 HTTP 验证"
+        },
+        {
+          "check": "真实图片数量",
+          "result": "通过",
+          "evidence": "10 张，全部下载、哈希和 HTTP 验证"
+        },
+        {
+          "check": "开放媒体来源完整性",
+          "result": "通过",
+          "evidence": "20/20 有来源页、许可、本地路径和 SHA-256"
+        },
+        {
+          "check": "Mock 显式标识",
+          "result": "通过",
+          "evidence": "15/15 truth_notice 以 Mock 开头"
+        },
+        {
+          "check": "地域真实性",
+          "result": "通过",
+          "evidence": "3 张贵州都匀实拍；其余明确标记茶行业通用参考"
+        },
+        {
+          "check": "API 筛选",
+          "result": "通过",
+          "evidence": "video/image 各返回 10；非法 tyre 返回 400"
+        },
+        {
+          "check": "远程生产状态",
+          "result": "未执行",
+          "evidence": "仅本地 D1 与 localhost 联调，未推送、未远程迁移"
+        }
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [
+    {
+      "id": "tea_catalog_db",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT * FROM tea_industry_catalog WHERE organization_id = 'org-demo-guikesong' ORDER BY classification, item_type, quality_score DESC, id",
+        "description": "贵州茶目录表的本地 D1 审核快照。",
+        "tables_used": [
+          "tea_industry_catalog"
+        ],
+        "filters": {
+          "organization_id": "org-demo-guikesong"
+        },
+        "executed_at": "2026-08-29T18:17:26.873Z"
+      }
+    },
+    {
+      "id": "open_media_manifest",
+      "query": {
+        "engine": "filesystem",
+        "language": "json",
+        "description": "Wikimedia Commons 开放媒体下载清单，含许可、作者、本地路径和 SHA-256。",
+        "tables_used": [
+          "public/demo/tea-media/manifest.json"
+        ],
+        "executed_at": "2026-08-29T18:17:26.873Z"
+      }
+    },
+    {
+      "id": "catalog_e2e",
+      "query": {
+        "engine": "node",
+        "language": "javascript",
+        "description": "目录 API、筛选、文件哈希、媒体 HTTP 响应与 Mock 标签联调。",
+        "tables_used": [
+          "scripts/test-tea-catalog-e2e.mjs"
+        ],
+        "executed_at": "2026-08-29T18:17:26.873Z"
+      }
+    }
+  ]
+}

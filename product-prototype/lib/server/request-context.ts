@@ -1,8 +1,15 @@
-import { getRequestActor, persistRequestActor, type RequestActor } from './auth';
+import {
+  getRequestActor,
+  getRequestOrganization,
+  persistRequestActor,
+  type RequestActor,
+  type RequestOrganization,
+} from './auth';
 import { getDatabase, type Database } from './d1';
 
 export interface RequestContext {
   actor: RequestActor;
+  organization: RequestOrganization;
   db: Database;
   requestId: string;
 }
@@ -15,8 +22,10 @@ export async function createRequestContext(
   const actor = await getRequestActor(request);
   if (!actor) throw new Error('Authenticated actor unexpectedly missing');
   if (options.persistActor !== false) await persistRequestActor(db, actor);
+  const organization = await getRequestOrganization(db, actor);
   return {
     actor,
+    organization,
     db,
     requestId: options.requestId ?? request.headers.get('x-request-id') ?? crypto.randomUUID(),
   };

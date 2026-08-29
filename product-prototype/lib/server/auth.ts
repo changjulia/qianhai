@@ -8,8 +8,16 @@ const HEADER_NAMES = {
   email: ['oai-authenticated-user-email'],
   name: ['oai-authenticated-user-name'],
   avatar: ['oai-authenticated-user-avatar-url', 'oai-authenticated-user-image-url'],
-  organization: ['oai-authenticated-user-organization-id', 'x-organization-id'],
+  trustedOrganization: ['oai-authenticated-user-organization-id'],
+  selectedOrganization: ['x-organization-id'],
 } as const;
+
+export type OrganizationClaimSource =
+  | 'identity_provider'
+  | 'explicit_selection'
+  | 'environment_default'
+  | 'local_demo'
+  | 'presentation_demo';
 
 export interface RequestActor {
   userId: string;
@@ -18,8 +26,18 @@ export interface RequestActor {
   displayName: string;
   avatarUrl?: string;
   organizationId: string;
-  source: 'authenticated' | 'local_demo';
+  organizationClaimSource: OrganizationClaimSource;
+  source: 'authenticated' | 'local_demo' | 'presentation_demo';
   actorType: 'user';
+}
+
+export interface RequestOrganization {
+  id: string;
+  enterpriseId: string | null;
+  slug: string;
+  name: string;
+  membershipRoleId: string | null;
+  permissions: string[];
 }
 
 export interface ActorOptions {
@@ -34,10 +52,20 @@ export async function getRequestActor(
   if (externalUserId) {
     const email = firstHeader(request.headers, HEADER_NAMES.email);
     const displayName = firstHeader(request.headers, HEADER_NAMES.name) ?? email ?? 'Authenticated user';
-    const organizationId =
-      firstHeader(request.headers, HEADER_NAMES.organization) ??
-      readEnv('DEFAULT_ORGANIZATION_ID') ??
-      'org-demo-guikesong';
+    const trustedOrganizationId = firstHeader(request.headers, HEADER_NAMES.trustedOrganization);
+    const selectedOrganizationId = firstHeader(request.headers, HEADER_NAMES.selectedOrganization);
+    const defaultOrganizationId = readEnv('DEFAULT_ORGANIZATION_ID');
+    const organizationId = selectedOrganizationId ?? trustedOrganizationId ?? defaultOrganizationId;
+    if (!organizationId) {
+      throw new ApiError(401, 'organization_required', 'Authenticated organization context is required');
+    }
+    const organizationClaimSource: OrganizationClaimSource = selectedOrganizationId
+      ? selectedOrganizationId === trustedOrganizationId
+        ? 'identity_provider'
+        : 'explicit_selection'
+      : trustedOrganizationId
+        ? 'identity_provider'
+        : 'environment_default';
     return {
       userId: await stableId('user', externalUserId),
       externalUserId,
@@ -47,19 +75,33 @@ export async function getRequestActor(
         ? { avatarUrl: firstHeader(request.headers, HEADER_NAMES.avatar) }
         : {}),
       organizationId,
+      organizationClaimSource,
       source: 'authenticated',
       actorType: 'user',
     };
   }
 
-  if (demoActorEnabled()) {
+  if (demoActorEnabled() || presentationActorEnabled()) {
+    const userId = readEnv('DEMO_ACTOR_USER_ID');
+    const externalUserId = readEnv('DEMO_ACTOR_EXTERNAL_ID');
+    const displayName = readEnv('DEMO_ACTOR_NAME');
+    const organizationId = readEnv('DEFAULT_ORGANIZATION_ID');
+    if (!userId || !externalUserId || !displayName || !organizationId) {
+      throw new ApiError(
+        503,
+        'local_actor_misconfigured',
+        'The explicitly enabled local actor is missing required identity configuration',
+      );
+    }
+    const email = readEnv('DEMO_ACTOR_EMAIL');
     return {
-      userId: readEnv('DEMO_ACTOR_USER_ID') ?? 'user-demo-local',
-      externalUserId: readEnv('DEMO_ACTOR_EXTERNAL_ID') ?? 'demo-local-user',
-      email: readEnv('DEMO_ACTOR_EMAIL') ?? 'demo@example.invalid',
-      displayName: readEnv('DEMO_ACTOR_NAME') ?? '本地 Demo 用户',
-      organizationId: readEnv('DEFAULT_ORGANIZATION_ID') ?? 'org-demo-guikesong',
-      source: 'local_demo',
+      userId,
+      externalUserId,
+      ...(email ? { email } : {}),
+      displayName,
+      organizationId,
+      organizationClaimSource: presentationActorEnabled() ? 'presentation_demo' : 'local_demo',
+      source: presentationActorEnabled() ? 'presentation_demo' : 'local_demo',
       actorType: 'user',
     };
   }
@@ -77,9 +119,31 @@ export async function persistRequestActor(db: Database, actor: RequestActor): Pr
     throw new ApiError(403, 'forbidden', 'The requested organization is unavailable');
   }
 
+  const currentMembership = await queryFirst<{ status: string }>(db, {
+    sql: `SELECT status FROM organization_user_memberships
+      WHERE organization_id = ? AND user_id = ?`,
+    params: [actor.organizationId, actor.userId],
+  });
+  if (currentMembership && currentMembership.status !== 'active') {
+    throw new ApiError(403, 'organization_membership_inactive', 'Organization membership is not active');
+  }
+  const canProvisionMembership =
+    currentMembership?.status === 'active' ||
+    actor.organizationClaimSource === 'identity_provider' ||
+    actor.source === 'local_demo' ||
+    actor.source === 'presentation_demo' ||
+    localMembershipProvisioningEnabled();
+  if (!canProvisionMembership) {
+    throw new ApiError(
+      403,
+      'organization_membership_required',
+      'The authenticated user is not a member of the requested organization',
+    );
+  }
+
   const now = new Date().toISOString();
   const membershipId = await stableId('membership', `${actor.organizationId}:${actor.userId}`);
-  await executeBatch(db, [
+  const statements = [
     {
       sql: `INSERT INTO app_users
         (id, external_user_id, email, display_name, avatar_url, status, profile_json, last_seen_at, created_at, updated_at)
@@ -102,13 +166,13 @@ export async function persistRequestActor(db: Database, actor: RequestActor): Pr
         now,
       ],
     },
-    {
+  ];
+  if (!currentMembership) {
+    statements.push({
       sql: `INSERT INTO organization_user_memberships
         (id, organization_id, user_id, role_id, status, permissions_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'active', '[]', ?, ?)
-        ON CONFLICT(organization_id, user_id) DO UPDATE SET
-          status = 'active',
-          updated_at = excluded.updated_at`,
+        ON CONFLICT(organization_id, user_id) DO NOTHING`,
       params: [
         membershipId,
         actor.organizationId,
@@ -117,15 +181,69 @@ export async function persistRequestActor(db: Database, actor: RequestActor): Pr
         now,
         now,
       ],
-    },
-  ]);
+    });
+  }
+  await executeBatch(db, statements);
   return actor;
+}
+
+export async function getRequestOrganization(
+  db: Database,
+  actor: RequestActor,
+): Promise<RequestOrganization> {
+  const row = await queryFirst<{
+    id: string;
+    enterprise_id: string | null;
+    slug: string;
+    name: string;
+    role_id: string | null;
+    permissions_json: string;
+  }>(db, {
+    sql: `SELECT o.id, o.enterprise_id, o.slug, o.name, m.role_id, m.permissions_json
+      FROM organizations o
+      JOIN organization_user_memberships m
+        ON m.organization_id = o.id AND m.user_id = ? AND m.status = 'active'
+      WHERE o.id = ? AND o.status = 'active'`,
+    params: [actor.userId, actor.organizationId],
+  });
+  if (!row) {
+    throw new ApiError(403, 'organization_scope_unavailable', 'Active organization scope is unavailable');
+  }
+  return {
+    id: row.id,
+    enterpriseId: row.enterprise_id,
+    slug: row.slug,
+    name: row.name,
+    membershipRoleId: row.role_id,
+    permissions: parsePermissions(row.permissions_json),
+  };
 }
 
 export function demoActorEnabled(): boolean {
   const appEnvironment = (readEnv('APP_ENV') ?? '').toLowerCase();
   const explicitlyEnabled = (readEnv('ALLOW_DEMO_ACTOR') ?? '').toLowerCase() === 'true';
   return explicitlyEnabled && ['development', 'local', 'test'].includes(appEnvironment);
+}
+
+export function presentationActorEnabled(): boolean {
+  const appEnvironment = (readEnv('APP_ENV') ?? '').toLowerCase();
+  const explicitlyEnabled = (readEnv('ALLOW_PRESENTATION_ACTOR') ?? '').toLowerCase() === 'true';
+  const organizationId = readEnv('DEFAULT_ORGANIZATION_ID');
+  return explicitlyEnabled && appEnvironment === 'production' && organizationId === 'org-demo-guikesong';
+}
+
+function localMembershipProvisioningEnabled(): boolean {
+  const appEnvironment = (readEnv('APP_ENV') ?? '').toLowerCase();
+  return demoActorEnabled() && ['development', 'local', 'test'].includes(appEnvironment);
+}
+
+function parsePermissions(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function firstHeader(headers: Headers, names: readonly string[]): string | undefined {

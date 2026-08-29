@@ -74,7 +74,7 @@ export function RevenueAnalysisPage({ onOpenWorkbench }: RevenueAnalysisPageProp
 
     <section className="ra-filterbar">
       <Filter label="时间" value={filters.time} values={['本月', '近 90 天', '本季度']} onChange={v => setFilters({...filters,time:v})}/>
-      <Filter label="项目" value={filters.project} values={[PROJECTS.matcha.name, PROJECTS.rose.name]} onChange={v => setFilters({...filters,project:v})}/>
+      <Filter label="项目" value={filters.project} values={[PROJECTS.matcha.name]} onChange={v => setFilters({...filters,project:v})}/>
       <Filter label="市场" value={filters.market} values={['全部市场', '马来西亚', '新加坡', '印尼']} onChange={v => setFilters({...filters,market:v})}/>
       <Filter label="渠道" value={filters.channel} values={['全部渠道', ...SUPPORTED_PLATFORMS]} onChange={v => setFilters({...filters,channel:v})}/>
       <label className="ra-model"><span>归因模型</span><select value={model} onChange={e => setModel(e.target.value as Model)}>{(['经营贡献','首次触点','最终触点','线性归因'] as Model[]).map(v=><option key={v}>{v}</option>)}</select></label>
