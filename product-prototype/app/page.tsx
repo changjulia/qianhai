@@ -121,7 +121,6 @@ function ProjectDetail({ tab }: { tab: string }) {
 }
 
 function ContentPage() {
-  const [tab, setTab] = useState('生产工作台');
   const [watchingRun, setWatchingRun] = useState(false);
   const [dialog, setDialog] = useState<{title:string;desc:string}|null>(null);
   const [project, setProject] = useState('贵州抹茶东南亚渠道增长');
@@ -131,26 +130,44 @@ function ContentPage() {
       <div><span className="content-breadcrumb">经营任务　/　{project}</span><h1>{campaign}</h1><p>让马来西亚食品原料进口商看见工厂实力，并留下有效采购询盘。</p></div>
       <div className="content-head-actions"><button className="project-switch" onClick={()=>setProject(p=>p.startsWith('贵州')?'工业轮胎中东经销增长':'贵州抹茶东南亚渠道增长')}>切换项目 ⌄</button><button className="primary" onClick={()=>setDialog({title:'创建内容任务',desc:'将为当前 Campaign 创建一条待策划任务。'})}>＋ 新建任务</button></div>
     </header>
-    <nav className="content-stage-nav" aria-label="内容工作阶段"><button className={tab==='生产工作台'?'active':''} onClick={()=>setTab('生产工作台')}><span>生产工作台</span><b>8</b></button><button className={tab==='审核与发布'?'active attention':''} onClick={()=>setTab('审核与发布')}><span>审核与发布</span><b>7</b></button><span>项目周期　2026.08.15 — 10.31</span></nav>
-    {tab==='生产工作台'?<>
-      <section className="content-status-grid" aria-label="项目状态"><button onClick={()=>setDialog({title:'8 项内容正在生产',desc:'3 项由人员编辑，5 项由数字员工执行，当前无超时任务。'})}><span>进行中</span><strong>8</strong><small>5 项由 AI 执行</small></button><button onClick={()=>setDialog({title:'2 项等待你确认',desc:'包括清真认证附件和工厂产能数据确认。'})}><span>待我确认</span><strong>2</strong><small>需要补充资料</small></button><button onClick={()=>setTab('审核与发布')}><span>待审核</span><strong>7</strong><small>2 项今日到期</small></button><button className="risk" onClick={()=>setDialog({title:'1 项风险需要处理',desc:'清真认证说明尚缺少有效附件，可能影响内容审核。'})}><span>项目风险</span><strong>1</strong><small>认证资料缺失</small></button></section>
-      <button className="content-live-card" onClick={()=>setWatchingRun(true)}><span className="live-ai-mark"><i/>AI</span><span className="live-copy"><small>内容生产 Agent · 正在执行</small><strong>生成「工厂品质 30 秒视频」</strong><em>脚本与分镜已完成 · 正在生成第 3 / 6 个镜头</em></span><span className="live-progress"><span><i style={{width:'52%'}}/></span><small>52% · 预计还需 4 分钟</small></span><b>查看现场 →</b></button>
-      <section className="attention-section"><div className="section-heading"><div><h2>待我处理</h2><p>优先处理会阻塞生产和发布的事项</p></div><button onClick={()=>setDialog({title:'全部待处理事项',desc:'当前共有 7 项待处理，其中 2 项会阻塞当前 Campaign。'})}>查看全部 →</button></div><div className="attention-cards"><button onClick={()=>setDialog({title:'补充清真认证附件',desc:'内容生产需要引用有效认证文件，当前任务已暂停等待补充。'})}><span className="attention-icon warn">!</span><span><small>资料缺失 · 阻塞中</small><strong>清真认证说明缺少附件</strong><em>质量负责人 · 今天 12:00 前</em></span><b>补充资料 →</b></button><button onClick={()=>setTab('审核与发布')}><span className="attention-icon">&check;</span><span><small>内容审核 · 今日到期</small><strong>马来语应用配方短片</strong><em>品类经理 · 今天 14:00 前</em></span><b>去审核 →</b></button></div></section>
-      <section className="content-board-section"><div className="section-heading board-heading"><div><h2>内容生产看板</h2><p>按执行阶段跟踪任务，优先展示异常与即将到期项</p></div><div className="board-tools"><button className="active">全部任务</button><button>只看与我相关</button><button>筛选 ⌄</button></div></div><ContentKanban onWatch={()=>setWatchingRun(true)} onOpen={(title)=>setDialog({title,desc:'任务详情已载入，可继续查看负责人、截止时间、引用资料与执行记录。'})}/></section>
-    </>:<section className="panel content-main review-page"><div className="panel-title"><div><h2>审核与发布</h2><p>只处理需要人工确认的事实、承诺和风险</p></div><button>批量处理</button></div><ReviewWorkbench/></section>}
+    <AgentTaskCenter onWatch={()=>setWatchingRun(true)} onAction={(title,desc)=>setDialog({title,desc})}/>
     {watchingRun && <AgentLiveView onExit={()=>setWatchingRun(false)}/>}
     {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} onClose={()=>setDialog(null)}/>}
   </>;
 }
 
-function ContentKanban({ onWatch, onOpen }: { onWatch: () => void; onOpen: (title:string) => void }) {
-  const columns = [
-    ['待策划','4',[['进口商选品清单','采购经理','明天'],['抹茶等级指南','品类经理','周四']]],
-    ['资料准备','3',[['清真认证说明','质量负责人','缺少附件'],['工厂产能证据包','采购经理','待确认']]],
-    ['创作中','5',[['工厂品质 30 秒视频','采购经理','AI 创作中'],['渠道利润政策图文','经销商老板','人员编辑']]],
-    ['待审核','7',[['马来语应用配方短片','品类经理','今天 14:00'],['500kg 采购案例','进口商','今天 16:30']]],
-  ] as const;
-  return <div className="content-board">{columns.map(([title,count,cards])=><div className="content-column" key={title}><header><strong>{title}</strong><span>{count}</span><button aria-label={`在${title}中添加任务`} onClick={()=>onOpen(`在「${title}」中添加任务`)}>＋</button></header>{cards.map((card,i)=>title==='创作中'&&i===0?<article key={card[0]} className="running-task-card"><small>AI 执行 · {card[1]}</small><strong>{card[0]}</strong><div className="task-progress"><i><b style={{width:'52%'}}/></i><span>52%</span></div><div className="task-card-foot"><span><i className="live-dot-mini"/>正在生成分镜 3 / 6</span><button onClick={onWatch}>查看 →</button></div></article>:<button key={card[0]} onClick={()=>onOpen(card[0])}><small>{title==='资料准备'&&i===0?'阻塞 · ':''}{card[1]}</small><strong>{card[0]}</strong><div><span>{card[2]}</span><em>→</em></div></button>)}</div>)}</div>;
+type ContentTask = {id:string;stage:string;title:string;owner:string;meta:string;kind:'normal'|'running'|'attention'|'review'};
+
+const contentTasks:ContentTask[] = [
+  {id:'selection',stage:'待策划',title:'进口商选品清单',owner:'采购经理',meta:'明天',kind:'normal'},
+  {id:'grades',stage:'待策划',title:'抹茶等级指南',owner:'品类经理',meta:'周四',kind:'normal'},
+  {id:'halal',stage:'资料准备',title:'清真认证说明',owner:'质量负责人',meta:'缺少附件',kind:'attention'},
+  {id:'capacity',stage:'资料准备',title:'工厂产能证据包',owner:'采购经理',meta:'待确认',kind:'attention'},
+  {id:'factory',stage:'创作中',title:'工厂品质 30 秒视频',owner:'内容生产 Agent',meta:'镜头 3 / 6',kind:'running'},
+  {id:'profit',stage:'创作中',title:'渠道利润政策图文',owner:'经销商老板',meta:'人员编辑',kind:'normal'},
+  {id:'recipe',stage:'待审核',title:'马来语应用配方短片',owner:'品类经理',meta:'今天 14:00',kind:'review'},
+  {id:'case',stage:'待审核',title:'500kg 采购案例',owner:'进口商',meta:'今天 16:30',kind:'review'},
+];
+
+function AgentTaskCenter({onWatch,onAction}:{onWatch:()=>void;onAction:(title:string,desc:string)=>void}) {
+  const [selectedId,setSelectedId]=useState('factory');
+  const [filter,setFilter]=useState<'all'|'running'|'attention'|'mine'>('all');
+  const stages=['待策划','资料准备','创作中','待审核'];
+  const selected=contentTasks.find(task=>task.id===selectedId)??contentTasks[4];
+  const shown=contentTasks.filter(task=>filter==='all'||(filter==='running'&&task.kind==='running')||(filter==='attention'&&(task.kind==='attention'||task.kind==='review'))||(filter==='mine'&&['capacity','recipe','profit'].includes(task.id)));
+  const selectTask=(task:ContentTask)=>setSelectedId(task.id);
+  return <section className="agent-task-center">
+    <div className="task-center-toolbar"><div><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>全部任务</button><button className={filter==='running'?'active':''} onClick={()=>{setFilter('running');setSelectedId('factory')}}><i className="live-dot-mini"/>AI 执行中</button><button className={filter==='attention'?'active attention':''} onClick={()=>{setFilter('attention');setSelectedId('halal')}}>待我处理 <b>2</b></button><button className={filter==='mine'?'active':''} onClick={()=>{setFilter('mine');setSelectedId('capacity')}}>与我相关</button></div><button onClick={()=>onAction('筛选内容任务','可按负责人、截止时间、内容类型和 Agent 执行状态进行筛选。')}>筛选 ⌄</button></div>
+    <div className="task-center-body"><div className="task-flow"><div className="task-columns">{stages.map((stage,index)=><section className="task-stage" key={stage}><header><span>{String(index+1).padStart(2,'0')}</span><strong>{stage}</strong><b>{contentTasks.filter(task=>task.stage===stage).length}</b>{index<stages.length-1&&<i>→</i>}</header><div>{shown.filter(task=>task.stage===stage).map(task=><button key={task.id} className={`${task.kind} ${selected.id===task.id?'selected':''}`} onClick={()=>selectTask(task)}><span className="task-kind">{task.kind==='running'?<><i className="live-dot-mini"/>AI 正在执行</>:task.kind==='attention'?'!需要你介入':task.kind==='review'?'待你审核':task.owner}</span><strong>{task.title}</strong><small>{task.owner} · {task.meta}</small>{task.kind==='running'&&<span className="mini-run-progress"><i><b style={{width:'52%'}}/></i><em>52%</em></span>}</button>)}</div></section>)}</div>{shown.length===0&&<div className="task-empty">当前筛选下没有任务</div>}</div>
+      <aside className={`task-live-inspector ${selected.kind}`}><header><div><span className="inspector-agent"><i/>{selected.kind==='running'?'内容生产 Agent':selected.kind==='attention'?'人工协作节点':'任务详情'}</span><h3>{selected.title}</h3><p>{selected.kind==='running'?'已运行 02:18 · 预计还需 4 分钟':`${selected.owner} · ${selected.meta}`}</p></div>{selected.kind==='running'&&<button onClick={onWatch}>查看完整现场 →</button>}</header>
+        {selected.kind==='running'?<><section className="current-operation"><span>当前正在做</span><strong>生成「自动化生产线」镜头</strong><p>正在从企业素材库匹配可验证工厂产能的画面，已检查 18 份素材，选中 6 份。</p><div><span><i style={{width:'52%'}}/></span><b>52%</b></div></section><ExecutionSteps/><section className="recent-output"><header><strong>最近产出</strong><span>刚刚更新</span></header><div>{[['脚本 V1','已完成'],['6 镜头分镜稿','可查看'],['镜头 01','可预览'],['镜头 02','可预览']].map(item=><button key={item[0]} onClick={()=>onAction(item[0],'该产出已保存至当前内容任务，可继续预览或查看生成依据。')}><span>▣</span><strong>{item[0]}</strong><small>{item[1]}</small></button>)}</div></section></>:selected.kind==='attention'?<section className="intervention-panel"><span>!　当前阻塞</span><h4>{selected.id==='halal'?'需要补充有效的清真认证附件':'需要确认工厂月产能数据'}</h4><p>完成该操作后，Agent 将自动恢复后续内容生产，无需重新创建任务。</p><button onClick={()=>onAction(selected.id==='halal'?'补充认证资料':'确认产能数据','处理完成后，相关 Agent 任务将自动继续执行。')}>{selected.id==='halal'?'补充资料':'立即确认'} →</button></section>:<section className="task-detail-panel"><span>{selected.kind==='review'?'等待人工审核':'当前任务'}</span><h4>{selected.kind==='review'?'确认事实、品牌表达与对外承诺':'任务按计划推进中'}</h4><p>负责人：{selected.owner}<br/>截止或当前状态：{selected.meta}</p><button onClick={()=>onAction(selected.title,'已载入任务目标、负责人、截止时间、引用资料和完整执行记录。')}>{selected.kind==='review'?'去审核':'查看详情'} →</button></section>}
+      </aside></div>
+  </section>;
+}
+
+function ExecutionSteps(){
+  const steps=[['理解任务','done'],['调用资料','done'],['生成脚本','done'],['生成分镜','done'],['生成画面','active'],['合成检查','wait'],['提交审核','wait']];
+  return <section className="execution-steps"><header><strong>执行进度</strong><span>5 / 7</span></header><div>{steps.map(([name,state],index)=><span className={state} key={name}><i>{state==='done'?'✓':index+1}</i><small>{name}</small>{index<steps.length-1&&<em/>}</span>)}</div></section>;
 }
 
 function AgentLiveView({ onExit }: { onExit: () => void }) {
