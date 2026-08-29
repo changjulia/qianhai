@@ -1,4 +1,4 @@
-export const DEMO_SCHEMA_VERSION = 11;
+export const DEMO_SCHEMA_VERSION = 14;
 
 export const DEMO_TABLES = [
   'dataset_manifest', 'enterprises', 'products', 'enterprise_documents',
@@ -10,6 +10,7 @@ export const DEMO_TABLES = [
   'workflow_runs', 'workflow_run_resources', 'idempotency_keys',
   'organization_members', 'integrations', 'data_sources', 'sync_runs',
   'security_audit_events', 'organizations', 'app_users',
+  'app_user_credentials',
   'organization_user_memberships', 'durable_task_states', 'knowledge_records',
   'ui_actions', 'integration_credentials_metadata', 'security_policies',
   'organization_security_policies',

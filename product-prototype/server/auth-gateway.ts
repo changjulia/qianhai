@@ -20,6 +20,9 @@ const IDENTITY_HEADERS = [
   'cf-access-authenticated-user-email',
 ] as const;
 
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/register', '/api/auth/login', '/api/auth/logout']);
+const SESSION_COOKIE_NAME = 'qianhai_session';
+
 interface JwtHeader {
   alg?: unknown;
   typ?: unknown;
@@ -66,7 +69,7 @@ export function authenticateHeaders(input: Headers, pathname: string): Headers {
   const testIdentity = captureTestIdentity(input);
   for (const name of IDENTITY_HEADERS) sanitized.delete(name);
 
-  if (pathname === '/api/health') {
+  if (PUBLIC_PATHS.has(pathname)) {
     sanitized.delete('authorization');
     return sanitized;
   }
@@ -79,6 +82,14 @@ export function authenticateHeaders(input: Headers, pathname: string): Headers {
     if (!secret) throw new GatewayError(503, 'auth_unavailable', 'JWT authentication is not configured');
     injectClaims(sanitized, verifyHs256Jwt(match[1], secret));
     sanitized.delete('authorization');
+    return sanitized;
+  }
+
+  const sessionToken = readCookie(input.get('cookie'), SESSION_COOKIE_NAME);
+  if (sessionToken) {
+    const secret = process.env.AUTH_JWT_SECRET?.trim();
+    if (!secret) throw new GatewayError(503, 'auth_unavailable', 'JWT authentication is not configured');
+    injectClaims(sanitized, verifyHs256Jwt(sessionToken, secret));
     return sanitized;
   }
 
@@ -253,4 +264,14 @@ function bounded(value: string, label: string): string {
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function readCookie(header: string | null, name: string): string | null {
+  if (!header) return null;
+  for (const pair of header.split(';')) {
+    const separator = pair.indexOf('=');
+    if (separator < 0) continue;
+    if (pair.slice(0, separator).trim() === name) return pair.slice(separator + 1).trim();
+  }
+  return null;
 }

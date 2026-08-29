@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { ApiError } from './errors';
 import { executeBatch, queryFirst, type Database } from './d1';
 import { stringifyJson } from './json';
+import { readSessionClaims, stableEntityId } from './credential-auth';
 
 const HEADER_NAMES = {
   id: ['oai-authenticated-user-id', 'oai-authenticated-user-sub'],
@@ -67,7 +68,7 @@ export async function getRequestActor(
         ? 'identity_provider'
         : 'environment_default';
     return {
-      userId: await stableId('user', externalUserId),
+      userId: await stableEntityId('user', externalUserId),
       externalUserId,
       ...(email ? { email } : {}),
       displayName,
@@ -76,6 +77,20 @@ export async function getRequestActor(
         : {}),
       organizationId,
       organizationClaimSource,
+      source: 'authenticated',
+      actorType: 'user',
+    };
+  }
+
+  const session = await readSessionClaims(request);
+  if (session) {
+    return {
+      userId: await stableEntityId('user', session.sub),
+      externalUserId: session.sub,
+      email: session.email,
+      displayName: session.name,
+      organizationId: session.organization_id,
+      organizationClaimSource: 'identity_provider',
       source: 'authenticated',
       actorType: 'user',
     };
@@ -142,7 +157,7 @@ export async function persistRequestActor(db: Database, actor: RequestActor): Pr
   }
 
   const now = new Date().toISOString();
-  const membershipId = await stableId('membership', `${actor.organizationId}:${actor.userId}`);
+  const membershipId = await stableEntityId('membership', `${actor.organizationId}:${actor.userId}`);
   const statements = [
     {
       sql: `INSERT INTO app_users
@@ -259,13 +274,4 @@ function readEnv(name: string): string | undefined {
   if (typeof workerValue === 'string' && workerValue) return workerValue;
   const nodeValue = typeof process !== 'undefined' ? process.env[name] : undefined;
   return nodeValue || undefined;
-}
-
-async function stableId(namespace: string, value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(`${namespace}:${value}`);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  const hash = Array.from(new Uint8Array(digest).slice(0, 16), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('');
-  return `${namespace}-${hash}`;
 }

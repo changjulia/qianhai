@@ -273,7 +273,7 @@ async function handlePost(request: Request, context: RequestContext) {
           data_boundary=excluded.data_boundary, description=excluded.description, updated_at=CURRENT_TIMESTAMP
       `).bind(id, name, nodeType, parentId, ownerMemberId, boundary, text(payload.description, 600)).run();
       await audit(database, actor, 'organization.save', 'organization_node', id, 'success', { name }, 'medium');
-      return response({ ok: true, status: 'saved', id, snapshot: await snapshot() });
+      return response({ ok: true, status: 'saved', id, snapshot: await scopedSnapshot() });
     }
 
     if (action === 'members.import') {
@@ -313,7 +313,7 @@ async function handlePost(request: Request, context: RequestContext) {
       `).bind(runId, actor.id, filename, valid.length, rejected, JSON.stringify({ format: 'csv' })));
       await database.batch(statements);
       await audit(database, actor, 'members.import', 'member_import', runId, 'success', { imported: valid.length, rejected }, 'medium');
-      return response({ ok: true, status: 'imported', imported: valid.length, rejected, snapshot: await snapshot() });
+      return response({ ok: true, status: 'imported', imported: valid.length, rejected, snapshot: await scopedSnapshot() });
     }
 
     if (action === 'role.save') {
@@ -327,7 +327,7 @@ async function handlePost(request: Request, context: RequestContext) {
         ON CONFLICT(id) DO UPDATE SET name=excluded.name, permissions_json=excluded.permissions_json, data_scope=excluded.data_scope
       `).bind(id, name, JSON.stringify(permissions), scope).run();
       await audit(database, actor, 'role.save', 'role', id, 'success', { name, scope, permission_count: permissions.length }, 'high');
-      return response({ ok: true, status: 'saved', id, snapshot: await snapshot() });
+      return response({ ok: true, status: 'saved', id, snapshot: await scopedSnapshot() });
     }
 
     if (action === 'approval_chain.save') {
@@ -341,7 +341,7 @@ async function handlePost(request: Request, context: RequestContext) {
           applies_to=excluded.applies_to, sla_text=excluded.sla_text, active=excluded.active, updated_at=CURRENT_TIMESTAMP
       `).bind(id, name, JSON.stringify(jsonArray(payload.steps)), text(payload.appliesTo, 500), text(payload.slaText, 100), payload.active === false ? 0 : 1).run();
       await audit(database, actor, 'approval_chain.save', 'approval_chain', id, 'success', { name }, 'high');
-      return response({ ok: true, status: 'saved', id, snapshot: await snapshot() });
+      return response({ ok: true, status: 'saved', id, snapshot: await scopedSnapshot() });
     }
 
     if (action === 'integration.save' || action === 'integration.test') {
@@ -387,7 +387,7 @@ async function handlePost(request: Request, context: RequestContext) {
           message: secretRef
             ? '连接设置已保存，但在真实连接测试通过前不会标记为已连接。'
             : '连接设置已保存，但仍需配置服务端凭证引用。',
-          snapshot: await snapshot(),
+          snapshot: await scopedSnapshot(),
         });
       }
 
@@ -409,7 +409,7 @@ async function handlePost(request: Request, context: RequestContext) {
           missing,
           testAttempted: false,
           message: !endpoint ? '请先配置真实 HTTPS 连接地址。' : `服务端尚未配置 ${secretRef} 环境变量，未执行外部连接测试。`,
-          snapshot: await snapshot(),
+          snapshot: await scopedSnapshot(),
         }, { status: 409 });
       }
 
@@ -443,10 +443,10 @@ async function handlePost(request: Request, context: RequestContext) {
           error: 'integration_connection_failed',
           testAttempted: true,
           message: connectionMessage,
-          snapshot: await snapshot(),
+          snapshot: await scopedSnapshot(),
         }, { status: 502 });
       }
-      return response({ ok: true, id, status: 'connected', testAttempted: true, message: connectionMessage, snapshot: await snapshot() });
+      return response({ ok: true, id, status: 'connected', testAttempted: true, message: connectionMessage, snapshot: await scopedSnapshot() });
     }
 
     if (action === 'sync.run') {
@@ -482,7 +482,7 @@ async function handlePost(request: Request, context: RequestContext) {
         integrationId,
         retryable: false,
         message: '当前版本尚未实现连接器同步 Worker，未创建伪队列任务；本次尝试已作为 unsupported 运行记录留痕。',
-        snapshot: await snapshot(),
+        snapshot: await scopedSnapshot(),
       }, { status: 501 });
     }
 
@@ -497,7 +497,7 @@ async function handlePost(request: Request, context: RequestContext) {
       `).bind(status, status === 'assigned' ? (text(payload.assignedTo, 120) || actor.id) : null, text(payload.note, 500), status === 'assigned' ? null : new Date().toISOString(), status === 'assigned' ? null : actor.id, id).run();
       if (!result.meta.changes) return error('not_found', '未找到该数据质量问题。', 404);
       await audit(database, actor, action, 'data_quality_issue', id, 'success', { disposition, status }, 'medium');
-      return response({ ok: true, status, message: '数据质量处置已持久化并写入审计。', snapshot: await snapshot() });
+      return response({ ok: true, status, message: '数据质量处置已持久化并写入审计。', snapshot: await scopedSnapshot() });
     }
 
     if (action === 'security_policy.save') {
@@ -513,7 +513,7 @@ async function handlePost(request: Request, context: RequestContext) {
           config_json=excluded.config_json, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP
       `).bind(id, name, text(payload.description, 800), text(payload.policyDomain, 80) || 'security', payload.enabled === false ? 0 : 1, text(payload.enforcementLevel, 100) || '强制', text(payload.scope, 120) || 'enterprise', JSON.stringify(jsonObject(payload.config)), actor.id).run();
       await audit(database, actor, action, 'security_policy', id, 'success', { name, enabled: payload.enabled !== false }, 'high');
-      return response({ ok: true, status: 'saved', message: '安全策略已保存并立即纳入审计。', snapshot: await snapshot() });
+      return response({ ok: true, status: 'saved', message: '安全策略已保存并立即纳入审计。', snapshot: await scopedSnapshot() });
     }
 
     if (action === 'deployment.save' || action === 'organization_rules.save') {
@@ -524,7 +524,7 @@ async function handlePost(request: Request, context: RequestContext) {
         ON CONFLICT(setting_key) DO UPDATE SET value_json=excluded.value_json, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP
       `).bind(key, JSON.stringify(payload), actor.id).run();
       await audit(database, actor, action, 'platform_setting', key, 'success', {}, 'high');
-      return response({ ok: true, status: 'saved', message: '治理策略已持久化并写入审计。', snapshot: await snapshot() });
+      return response({ ok: true, status: 'saved', message: '治理策略已持久化并写入审计。', snapshot: await scopedSnapshot() });
     }
 
     if (action === 'audit.resolve') {
@@ -539,12 +539,12 @@ async function handlePost(request: Request, context: RequestContext) {
         VALUES (?, ?, ?, ?, ?)
       `).bind(dispositionId, eventId, disposition, text(payload.note, 500), actor.id).run();
       await audit(database, actor, action, 'security_audit_event', eventId, 'success', { disposition }, 'high');
-      return response({ ok: true, status: 'resolved', message: '事件处置已记录，原审计证据保持不可变。', snapshot: await snapshot() });
+      return response({ ok: true, status: 'resolved', message: '事件处置已记录，原审计证据保持不可变。', snapshot: await scopedSnapshot() });
     }
 
     if (action === 'platform.diagnose') {
       await audit(database, actor, action, 'platform', 'platform', 'success', {}, 'low');
-      const current = await snapshot();
+      const current = await scopedSnapshot();
       return response({ ok: true, status: current.metrics.needsConfiguration ? 'needs_configuration' : 'healthy', message: current.metrics.needsConfiguration ? `${current.metrics.needsConfiguration} 个连接器仍需服务端配置。` : '平台治理检查通过。', snapshot: current });
     }
 

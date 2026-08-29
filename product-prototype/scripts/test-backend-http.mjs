@@ -13,6 +13,8 @@ const databasePath = join(temporaryDirectory, 'e2e.sqlite');
 const port = 33_000 + Math.floor(Math.random() * 5_000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const jwtSecret = 'e2e-only-secret-with-more-than-thirty-two-bytes';
+const jwtIssuer = 'https://auth.e2e.qianhai.invalid';
+const jwtAudience = 'qianhai-backend-e2e';
 const runId = `e2e-${randomUUID()}`;
 const primarySubject = `primary-${runId}`;
 const isolatedSubject = `isolated-${runId}`;
@@ -23,10 +25,23 @@ const logs = [];
 let server;
 
 try {
-  await startServer();
+  await startServer({ ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION: 'false' });
+  await waitForHealth();
+  await assertTrialRegistrationRejected('default-disabled');
+  await stopServer();
+
+  await startServer({ ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION: 'true' });
   await waitForHealth();
   await runContractSuite();
-  console.log('[backend-http-e2e] PASS: JWT auth, onboarding, org isolation, workflow, integrations, and search');
+  await stopServer();
+
+  await startServer({
+    APP_ENV: 'production',
+    ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION: 'true',
+  });
+  await waitForHealth();
+  await assertTrialRegistrationRejected('production-forbidden');
+  console.log('[backend-http-e2e] PASS: registration gate, JWT/cookie auth, onboarding, org isolation, workflow, integrations, and search');
 } catch (error) {
   console.error('[backend-http-e2e] FAIL:', error instanceof Error ? error.stack : error);
   if (logs.length) console.error('[backend-http-e2e] server log tail:\n' + logs.slice(-80).join(''));
@@ -42,7 +57,7 @@ async function runContractSuite() {
   const health = await request('GET', '/api/health', { token: null, expected: 200 });
   assert.equal(health.body.ok, true);
   assert.equal(health.body.database.ok, true);
-  assert.equal(health.body.schemaVersion, 11);
+  assert.equal(health.body.schemaVersion, 14);
 
   const unauthenticated = await request('GET', '/api/onboarding', { token: null, expected: 401 });
   assert.equal(unauthenticated.body.error.code, 'unauthorized');
@@ -56,6 +71,8 @@ async function runContractSuite() {
     },
   });
   assert.equal(spoofOnly.body.error.code, 'unauthorized');
+
+  const credentialAccount = await runCredentialAuth();
 
   const firstLogin = await request('POST', '/api/onboarding/first-login', {
     token: primaryToken,
@@ -218,6 +235,25 @@ async function runContractSuite() {
   assert.equal(integrationFailure.body.error, 'integration_needs_configuration');
   assert.equal(integrationFailure.body.testAttempted, false);
 
+  const attemptedFailure = await request('POST', '/api/platform', {
+    token: primaryToken,
+    expected: 502,
+    body: {
+      action: 'integration.test',
+      payload: {
+        id: `integration-unreachable-${runId}`,
+        name: 'E2E unreachable connector',
+        integrationType: 'custom',
+        endpointUrl: 'https://unreachable.invalid/health',
+        secretRef: 'E2E_CONNECTOR_TOKEN',
+      },
+    },
+  });
+  assert.equal(attemptedFailure.body.ok, false);
+  assert.equal(attemptedFailure.body.status, 'failed');
+  assert.equal(attemptedFailure.body.error, 'integration_connection_failed');
+  assert.equal(attemptedFailure.body.testAttempted, true);
+
   const unsupportedSync = await request('POST', '/api/platform', {
     token: primaryToken,
     expected: 501,
@@ -239,7 +275,89 @@ async function runContractSuite() {
   assert.equal(unsupportedSearch.body.networkAttempted, false);
   assert.deepEqual(unsupportedSearch.body.results, []);
 
-  verifyDatabaseEvidence({ primaryUserId, integrationId, syncRunId: unsupportedSync.body.runId });
+  verifyDatabaseEvidence({
+    primaryUserId,
+    credentialAccount,
+    integrationId,
+    syncRunId: unsupportedSync.body.runId,
+  });
+}
+
+async function runCredentialAuth() {
+  const email = `credential-${runId}@example.invalid`;
+  const password = 'E2E-password-2026!';
+  const registration = await request('POST', '/api/auth/register', {
+    token: null,
+    expected: 201,
+    body: { name: 'Credential E2E User', email, password },
+  });
+  assert.equal(registration.body.ok, true);
+  assert.equal(registration.body.user.email, email);
+  assert.equal(registration.body.user.organizationId, primaryOrganization);
+  const registrationCookie = registration.headers.get('set-cookie');
+  assert.match(registrationCookie, /^qianhai_session=/u);
+  assert.match(registrationCookie, /HttpOnly/iu);
+  assert.match(registrationCookie, /SameSite=Lax/iu);
+
+  const duplicate = await request('POST', '/api/auth/register', {
+    token: null,
+    expected: 409,
+    body: { name: 'Credential E2E User', email, password },
+  });
+  assert.equal(duplicate.body.error.code, 'account_exists');
+
+  const firstLogin = await request('POST', '/api/onboarding/first-login', {
+    token: null,
+    expected: 200,
+    headers: { Cookie: registrationCookie.split(';', 1)[0] },
+  });
+  assert.equal(firstLogin.body.shouldStartOnboarding, true);
+  assert.equal(firstLogin.body.onboarding.userId, registration.body.user.id);
+
+  const logout = await request('POST', '/api/auth/logout', {
+    token: null,
+    expected: 200,
+    headers: { Cookie: registrationCookie.split(';', 1)[0] },
+  });
+  assert.equal(logout.body.ok, true);
+  assert.match(logout.headers.get('set-cookie'), /Max-Age=0/iu);
+
+  const rejectedLogin = await request('POST', '/api/auth/login', {
+    token: null,
+    expected: 401,
+    body: { email, password: 'incorrect-password' },
+  });
+  assert.equal(rejectedLogin.body.error.code, 'invalid_credentials');
+
+  const login = await request('POST', '/api/auth/login', {
+    token: null,
+    expected: 200,
+    body: { email, password },
+  });
+  assert.equal(login.body.user.id, registration.body.user.id);
+  const loginCookie = login.headers.get('set-cookie');
+  assert.match(loginCookie, /^qianhai_session=/u);
+  const persistedIdentity = await request('GET', '/api/onboarding', {
+    token: null,
+    expected: 200,
+    headers: { Cookie: loginCookie.split(';', 1)[0] },
+  });
+  assert.equal(persistedIdentity.body.onboarding.userId, registration.body.user.id);
+  assert.equal(persistedIdentity.body.onboarding.organizationId, primaryOrganization);
+  return { userId: registration.body.user.id, email, password };
+}
+
+async function assertTrialRegistrationRejected(label) {
+  const registration = await request('POST', '/api/auth/register', {
+    token: null,
+    expected: 403,
+    body: {
+      name: 'Registration Gate E2E',
+      email: `${label}-${runId}@example.invalid`,
+      password: 'E2E-password-2026!',
+    },
+  });
+  assert.equal(registration.body.error.code, 'single_tenant_trial_registration_disabled');
 }
 
 async function runWorkflow(token) {
@@ -341,7 +459,7 @@ async function runWorkflow(token) {
   assert.equal(afterCleanup.foreignKeyViolations, 0);
 }
 
-function verifyDatabaseEvidence({ primaryUserId, integrationId, syncRunId }) {
+function verifyDatabaseEvidence({ primaryUserId, credentialAccount, integrationId, syncRunId }) {
   const database = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const onboarding = database.prepare(`SELECT status, first_growth_task_id
@@ -365,8 +483,19 @@ function verifyDatabaseEvidence({ primaryUserId, integrationId, syncRunId }) {
     assert.equal(audit.actor_id, primaryUserId);
     assert.equal(audit.result, 'needs_configuration');
 
+    const credential = database.prepare(`SELECT u.email, c.password_salt, c.password_hash,
+        c.password_iterations
+      FROM app_users u JOIN app_user_credentials c ON c.user_id=u.id WHERE u.id=?`).get(credentialAccount.userId);
+    assert.equal(credential.email, credentialAccount.email);
+    assert.notEqual(credential.password_hash, credentialAccount.password);
+    assert.notEqual(credential.password_salt, credentialAccount.password);
+    assert.ok(credential.password_iterations >= 100_000);
+
     assert.equal(database.prepare('PRAGMA foreign_key_check').all().length, 0);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM _node_schema_migrations").get().count, 10);
+    const migrations = database.prepare('SELECT name FROM _node_schema_migrations ORDER BY name').all();
+    assert.ok(migrations.length >= 10);
+    assert.ok(migrations.some((row) => row.name === '0011_onboarding_and_knowledge_scope.sql'));
+    assert.ok(migrations.some((row) => row.name === '0014_account_credentials.sql'));
   } finally {
     database.close();
   }
@@ -419,6 +548,8 @@ function signToken(subject, organizationId) {
     organization_id: organizationId,
     email: `${subject}@example.invalid`,
     name: `HTTP E2E ${subject}`,
+    iss: jwtIssuer,
+    aud: jwtAudience,
     iat: now,
     exp: now + 600,
   });
@@ -434,7 +565,7 @@ function sumCounts(counts) {
   return Object.values(counts ?? {}).reduce((sum, value) => sum + Number(value ?? 0), 0);
 }
 
-async function startServer() {
+async function startServer(overrides = {}) {
   server = spawn(process.execPath, ['dist-backend/server.mjs'], {
     cwd: projectRoot,
     windowsHide: true,
@@ -443,11 +574,18 @@ async function startServer() {
       APP_ENV: 'test',
       ALLOW_DEMO_ACTOR: 'false',
       ALLOW_TEST_AUTH_HEADERS: 'false',
+      ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION: 'false',
       AUTH_JWT_SECRET: jwtSecret,
+      AUTH_JWT_ISSUER: jwtIssuer,
+      AUTH_JWT_AUDIENCE: jwtAudience,
+      E2E_CONNECTOR_TOKEN: 'not-a-real-external-token',
+      DEFAULT_ORGANIZATION_ID: primaryOrganization,
+      DEFAULT_NEW_USER_ROLE_ID: 'role-owner',
       HOST: '127.0.0.1',
       PORT: String(port),
       DATABASE_PATH: databasePath,
       CORS_ALLOWED_ORIGINS: '',
+      ...overrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
