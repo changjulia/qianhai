@@ -23,8 +23,12 @@ function Metric({ label, value, change, warn }: { label: string; value: string; 
   return <article className="stat-card"><div><span>{label}</span><b>{value}</b></div>{change && <em className={warn ? 'metric-warn' : ''}>{change}</em>}</article>;
 }
 
-function PageHeader({ title, desc, action, secondary }: { title: string; desc: string; action?: string; secondary?: string }) {
-  return <div className="page-heading"><div><p className="eyebrow">黔海 · {title}</p><h1>{title}</h1><p>{desc}</p></div><div className="header-actions">{secondary && <button className="secondary">{secondary}</button>}{action && <button className="primary">＋ {action}</button>}</div></div>;
+function PageHeader({ title, desc, action, secondary, onAction, onSecondary }: { title: string; desc: string; action?: string; secondary?: string; onAction?: () => void; onSecondary?: () => void }) {
+  return <div className="page-heading"><div><p className="eyebrow">黔海 · {title}</p><h1>{title}</h1><p>{desc}</p></div><div className="header-actions">{secondary && <button className="secondary" onClick={onSecondary}>{secondary}</button>}{action && <button className="primary" onClick={onAction}>＋ {action}</button>}</div></div>;
+}
+
+function ActionDialog({ title, desc, confirm='确认', onClose, onConfirm }: { title:string; desc:string; confirm?:string; onClose:()=>void; onConfirm?:()=>void }) {
+  return <div className="action-dialog-backdrop" onMouseDown={onClose}><section className="action-dialog" onMouseDown={e=>e.stopPropagation()}><header><span>黔海工作台</span><button onClick={onClose}>×</button></header><h2>{title}</h2><p>{desc}</p><label>补充说明（可选）<textarea placeholder="输入处理说明，相关记录将写入行动账本"/></label><footer><button onClick={onClose}>取消</button><button className="primary" onClick={()=>{onConfirm?.();onClose()}}>{confirm}</button></footer></section></div>;
 }
 
 function AgentNote({ agent, children, action = '查看建议', onAction }: { agent: string; children: React.ReactNode; action?: string; onAction?: () => void }) {
@@ -48,11 +52,12 @@ function sourceActions(source: SourceView, manualAction: string) {
 }
 
 function HomePage({ go }: { go: (view: View) => void }) {
+  const [dialog,setDialog]=useState(false);
   const stats = [
     ['海外精准访问', '38,420', '+18.6%'], ['新增有效询盘', '186', '+24.1%'], ['活跃商机', '42', '+8.3%'], ['预计成交金额', '¥ 286万', '+31.5%'],
   ];
   return <>
-    <PageHeader title="上午好，陈雨晴" desc="关注增长结果，处理今天最重要的工作。" action="新建增长项目" />
+    <PageHeader title="上午好，陈雨晴" desc="关注增长结果，处理今天最重要的工作。" action="新建增长项目" onAction={()=>setDialog(true)} />
     <div className="stat-grid">{stats.map(s => <Metric key={s[0]} label={s[0]} value={s[1]} change={s[2]} />)}</div>
     <div className="dashboard-grid">
       <section className="panel projects-panel">
@@ -74,15 +79,16 @@ function HomePage({ go }: { go: (view: View) => void }) {
     <section className="panel agent-panel">
       <div className="panel-title"><div><h2>AI 协同动态</h2><p>六位 Agent 嵌入业务单元，首页只汇总结果和待确认动作</p></div><span className="live-dot">6 位在线</span></div>
       <div className="agent-grid">{agents.map(agent => <button className="agent-card" key={agent.name} onClick={() => go(agent.view)}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name}</strong><small>{agent.action}</small><em>{agent.unit}</em></span><b>›</b></button>)}</div>
-    </section>
+    </section>{dialog&&<ActionDialog title="新建增长项目" desc="设置目标市场、预算和数字员工行动边界，创建后进入经营任务配置。" confirm="开始配置" onClose={()=>setDialog(false)} onConfirm={()=>go('projects')}/>}
   </>;
 }
 
 function ProjectsPage() {
   const [tab, setTab] = useState('项目列表');
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
   const tabs = ['项目列表', '执行动态', '市场策略', '目标预算', '执行计划', '项目价值'];
   return <>
-    <PageHeader title="经营任务" desc="为数字员工配置目标、预算、自主等级和行动边界。" action="新建经营任务" secondary="任务模板" />
+    <PageHeader title="经营任务" desc="为数字员工配置目标、预算、自主等级和行动边界。" action="新建经营任务" secondary="任务模板" onAction={()=>setDialog({title:'新建经营任务',desc:'填写经营目标后，系统将生成预算、执行计划和数字员工配置草案。'})} onSecondary={()=>setDialog({title:'经营任务模板',desc:'已加载海外获客、渠道增长和新品验证等 6 个企业模板。'})}/>
     <Tabs items={tabs} active={tab} setActive={setTab} />
     {tab === '项目列表' ? <>
       <div className="stat-grid five"><Metric label="进行中项目" value="8" change="3 个重点"/><Metric label="项目总预算" value="¥ 246万" change="已用 48%"/><Metric label="累计有效询盘" value="333" change="+21.8%"/><Metric label="商机管道" value="¥ 1,544万" change="6.3× 投入"/><Metric label="异常项目" value="2" change="需要处理" warn/></div>
@@ -93,12 +99,13 @@ function ProjectsPage() {
               ['贵州抹茶东南亚渠道增长','马来西亚 / 新加坡','获客验证','68 / 96','61%','186','¥ 486万','正常'],
               ['刺梨浓缩汁渠道增长','马来西亚','内容测试','32 / 72','38%','54','¥ 216万','关注'],
               ['工业轮胎中东经销增长','阿联酋 / 沙特','商机推进','84 / 110','72%','93','¥ 842万','正常'],
-            ].map(row => <button className="tr" key={row[0]}>{row.map((cell, i) => <span key={i} className={i === 0 ? 'strong-cell' : ''}>{i === 7 ? <small className={cell === '正常' ? 'good' : 'warn'}>{cell}</small> : cell}</span>)}</button>)}
+            ].map(row => <button className="tr" key={row[0]} onClick={()=>setDialog({title:row[0],desc:`${row[1]} · ${row[2]}。项目详情已载入，可继续查看目标预算和执行计划。`})}>{row.map((cell, i) => <span key={i} className={i === 0 ? 'strong-cell' : ''}>{i === 7 ? <small className={cell === '正常' ? 'good' : 'warn'}>{cell}</small> : cell}</span>)}</button>)}
           </div>
         </section>
-        <AgentNote agent="市场策略 Agent"><h3>抹茶项目优先扩大马来西亚</h3><p>渠道匹配度和询盘质量均高于新加坡；清真认证材料仍需在第二轮投放前补齐。</p><ul><li>优先客户：食品原料进口商</li><li>推荐路径：进口商 → 连锁饮品渠道</li><li>建议周期：90 天</li></ul></AgentNote>
+        <AgentNote agent="市场策略 Agent" onAction={()=>setDialog({title:'市场策略建议',desc:'建议优先扩大马来西亚食品原料进口商渠道，并在第二轮投放前补齐清真认证材料。'})}><h3>抹茶项目优先扩大马来西亚</h3><p>渠道匹配度和询盘质量均高于新加坡；清真认证材料仍需在第二轮投放前补齐。</p><ul><li>优先客户：食品原料进口商</li><li>推荐路径：进口商 → 连锁饮品渠道</li><li>建议周期：90 天</li></ul></AgentNote>
       </div>
-    </> : tab === '执行动态' ? <section className="panel"><div className="panel-title"><div><h2>数字员工执行动态</h2><p>围绕当前经营任务查看行动、依据、权限和待人工介入事项</p></div><button>查看行动账本</button></div><div className="agent-runtime-grid">{agents.map((agent,i)=><button key={agent.name}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name.replace(' Agent','数字员工')}</strong><small>{agent.action}</small><em>{i<3?'自主执行':'审批模式'} · 贵州抹茶项目</em></span><b>{i===3?'待审批':'运行中'}</b></button>)}</div></section> : <ProjectDetail tab={tab} />}
+    </> : tab === '执行动态' ? <section className="panel"><div className="panel-title"><div><h2>数字员工执行动态</h2><p>围绕当前经营任务查看行动、依据、权限和待人工介入事项</p></div><button onClick={()=>setDialog({title:'行动账本',desc:'今日 128 次行动均已记录调用依据、权限检查和执行结果。'})}>查看行动账本</button></div><div className="agent-runtime-grid">{agents.map((agent,i)=><button key={agent.name} onClick={()=>setDialog({title:agent.name,desc:`${agent.action}。当前为${i<3?'自主执行':'审批'}模式。`})}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name.replace(' Agent','数字员工')}</strong><small>{agent.action}</small><em>{i<3?'自主执行':'审批模式'} · 贵州抹茶项目</em></span><b>{i===3?'待审批':'运行中'}</b></button>)}</div></section> : <ProjectDetail tab={tab} />}
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="继续" onClose={()=>setDialog(null)}/>}
   </>;
 }
 
@@ -116,30 +123,49 @@ function ProjectDetail({ tab }: { tab: string }) {
 function ContentPage() {
   const [tab, setTab] = useState('生产工作台');
   const [watchingRun, setWatchingRun] = useState(false);
+  const [dialog, setDialog] = useState<{title:string;desc:string}|null>(null);
+  const [project, setProject] = useState('贵州抹茶东南亚渠道增长');
+  const campaign = project.startsWith('贵州')?'马来西亚食品原料商获客':'中东经销商获客';
   return <>
-    <PageHeader title="内容与素材" desc="围绕一个经营目标完成内容生产，以及审核发布。" action="创建内容任务" secondary="导出视图" />
-    <div className="context-strip"><span>当前项目</span><strong>贵州抹茶东南亚渠道增长</strong><i>／</i><span>Campaign</span><strong>马来西亚食品原料商获客</strong><button>切换⌄</button></div>
-    <div className="content-flow-switch"><button className={tab==='生产工作台'?'active':''} onClick={()=>setTab('生产工作台')}><i>1</i><span><strong>生产工作台</strong><small>策划、创作与 Agent 执行</small></span><b>8 进行中</b></button><em>→</em><button className={tab==='审核与发布'?'active':''} onClick={()=>setTab('审核与发布')}><i>2</i><span><strong>审核与发布</strong><small>事实确认、审批与发布</small></span><b className="attention-count">7 待处理</b></button></div>
-    {tab==='生产工作台'?<><button className="active-run-banner" onClick={()=>setWatchingRun(true)}><span className="run-orbit"><i/><b>AI</b></span><span><strong>内容生产 Agent 正在工作</strong><small>工厂品质 30 秒视频 · 正在生成第 3 / 6 个分镜 · 已运行 02:18</small></span><em><i><b style={{width:'52%'}}/></i>52%</em><b>进入工作现场　→</b></button><section className="panel content-main"><div className="panel-title"><div><h2>内容生产任务</h2><p>从任务开始，完成策划、创作并进入审核</p></div><div className="filter-chips"><button>全部来源⌄</button><button>全部状态⌄</button></div></div><ContentKanban onWatch={()=>setWatchingRun(true)}/></section></>:<section className="panel content-main"><div className="panel-title"><div><h2>审核与发布</h2><p>只处理需要人工确认的事实、承诺和风险</p></div><button>批量处理</button></div><ReviewWorkbench/></section>}
+    <header className="content-command-head">
+      <div><span className="content-breadcrumb">经营任务　/　{project}</span><h1>{campaign}</h1><p>让马来西亚食品原料进口商看见工厂实力，并留下有效采购询盘。</p></div>
+      <div className="content-head-actions"><button className="project-switch" onClick={()=>setProject(p=>p.startsWith('贵州')?'工业轮胎中东经销增长':'贵州抹茶东南亚渠道增长')}>切换项目 ⌄</button><button className="primary" onClick={()=>setDialog({title:'创建内容任务',desc:'将为当前 Campaign 创建一条待策划任务。'})}>＋ 新建任务</button></div>
+    </header>
+    <nav className="content-stage-nav" aria-label="内容工作阶段"><button className={tab==='生产工作台'?'active':''} onClick={()=>setTab('生产工作台')}><span>生产工作台</span><b>8</b></button><button className={tab==='审核与发布'?'active attention':''} onClick={()=>setTab('审核与发布')}><span>审核与发布</span><b>7</b></button><span>项目周期　2026.08.15 — 10.31</span></nav>
+    {tab==='生产工作台'?<>
+      <section className="content-status-grid" aria-label="项目状态"><button onClick={()=>setDialog({title:'8 项内容正在生产',desc:'3 项由人员编辑，5 项由数字员工执行，当前无超时任务。'})}><span>进行中</span><strong>8</strong><small>5 项由 AI 执行</small></button><button onClick={()=>setDialog({title:'2 项等待你确认',desc:'包括清真认证附件和工厂产能数据确认。'})}><span>待我确认</span><strong>2</strong><small>需要补充资料</small></button><button onClick={()=>setTab('审核与发布')}><span>待审核</span><strong>7</strong><small>2 项今日到期</small></button><button className="risk" onClick={()=>setDialog({title:'1 项风险需要处理',desc:'清真认证说明尚缺少有效附件，可能影响内容审核。'})}><span>项目风险</span><strong>1</strong><small>认证资料缺失</small></button></section>
+      <button className="content-live-card" onClick={()=>setWatchingRun(true)}><span className="live-ai-mark"><i/>AI</span><span className="live-copy"><small>内容生产 Agent · 正在执行</small><strong>生成「工厂品质 30 秒视频」</strong><em>脚本与分镜已完成 · 正在生成第 3 / 6 个镜头</em></span><span className="live-progress"><span><i style={{width:'52%'}}/></span><small>52% · 预计还需 4 分钟</small></span><b>查看现场 →</b></button>
+      <section className="attention-section"><div className="section-heading"><div><h2>待我处理</h2><p>优先处理会阻塞生产和发布的事项</p></div><button onClick={()=>setDialog({title:'全部待处理事项',desc:'当前共有 7 项待处理，其中 2 项会阻塞当前 Campaign。'})}>查看全部 →</button></div><div className="attention-cards"><button onClick={()=>setDialog({title:'补充清真认证附件',desc:'内容生产需要引用有效认证文件，当前任务已暂停等待补充。'})}><span className="attention-icon warn">!</span><span><small>资料缺失 · 阻塞中</small><strong>清真认证说明缺少附件</strong><em>质量负责人 · 今天 12:00 前</em></span><b>补充资料 →</b></button><button onClick={()=>setTab('审核与发布')}><span className="attention-icon">&check;</span><span><small>内容审核 · 今日到期</small><strong>马来语应用配方短片</strong><em>品类经理 · 今天 14:00 前</em></span><b>去审核 →</b></button></div></section>
+      <section className="content-board-section"><div className="section-heading board-heading"><div><h2>内容生产看板</h2><p>按执行阶段跟踪任务，优先展示异常与即将到期项</p></div><div className="board-tools"><button className="active">全部任务</button><button>只看与我相关</button><button>筛选 ⌄</button></div></div><ContentKanban onWatch={()=>setWatchingRun(true)} onOpen={(title)=>setDialog({title,desc:'任务详情已载入，可继续查看负责人、截止时间、引用资料与执行记录。'})}/></section>
+    </>:<section className="panel content-main review-page"><div className="panel-title"><div><h2>审核与发布</h2><p>只处理需要人工确认的事实、承诺和风险</p></div><button>批量处理</button></div><ReviewWorkbench/></section>}
     {watchingRun && <AgentLiveView onExit={()=>setWatchingRun(false)}/>}
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} onClose={()=>setDialog(null)}/>}
   </>;
 }
 
-function ContentKanban({ onWatch }: { onWatch: () => void }) {
+function ContentKanban({ onWatch, onOpen }: { onWatch: () => void; onOpen: (title:string) => void }) {
   const columns = [
     ['待策划','4',[['进口商选品清单','采购经理','明天'],['抹茶等级指南','品类经理','周四']]],
     ['资料准备','3',[['清真认证说明','质量负责人','缺少附件'],['工厂产能证据包','采购经理','待确认']]],
     ['创作中','5',[['工厂品质 30 秒视频','采购经理','AI 创作中'],['渠道利润政策图文','经销商老板','人员编辑']]],
     ['待审核','7',[['马来语应用配方短片','品类经理','今天 14:00'],['500kg 采购案例','进口商','今天 16:30']]],
   ] as const;
-  return <div className="content-board">{columns.map(([title,count,cards])=><div className="content-column" key={title}><header><strong>{title}</strong><span>{count}</span></header>{cards.map((card,i)=>title==='创作中'&&i===0?<article key={card[0]} className="running-task-card"><small>{card[1]}</small><strong>{card[0]}</strong><div className="task-progress"><i><b style={{width:'52%'}}/></i><span>分镜 3 / 6</span></div><button onClick={onWatch}><span><i/> Agent 正在操作页面</span><b>进入工作现场 →</b></button></article>:<button key={card[0]}><small>{card[1]}</small><strong>{card[0]}</strong><div><span>{card[2]}</span><em>⋯</em></div></button>)}<button className="add-card">＋ 添加任务</button></div>)}</div>;
+  return <div className="content-board">{columns.map(([title,count,cards])=><div className="content-column" key={title}><header><strong>{title}</strong><span>{count}</span><button aria-label={`在${title}中添加任务`} onClick={()=>onOpen(`在「${title}」中添加任务`)}>＋</button></header>{cards.map((card,i)=>title==='创作中'&&i===0?<article key={card[0]} className="running-task-card"><small>AI 执行 · {card[1]}</small><strong>{card[0]}</strong><div className="task-progress"><i><b style={{width:'52%'}}/></i><span>52%</span></div><div className="task-card-foot"><span><i className="live-dot-mini"/>正在生成分镜 3 / 6</span><button onClick={onWatch}>查看 →</button></div></article>:<button key={card[0]} onClick={()=>onOpen(card[0])}><small>{title==='资料准备'&&i===0?'阻塞 · ':''}{card[1]}</small><strong>{card[0]}</strong><div><span>{card[2]}</span><em>→</em></div></button>)}</div>)}</div>;
 }
 
 function AgentLiveView({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(2);
-  const steps = ['读取任务与产品资料','生成视频脚本','生成分镜与画面','合成配音与字幕','渲染预览','事实检查并提交'];
-  useEffect(()=>{const timer=window.setInterval(()=>setStep(s=>s<5?s+1:s),4200);return()=>window.clearInterval(timer)},[]);
-  return <div className="agent-live-overlay"><section className="agent-live-shell"><header className="live-topbar"><button onClick={onExit}>← 退出观看</button><div><span className="agent-spark">AI</span><p><strong>内容生产 Agent</strong><small>工厂品质 30 秒视频 · 自动执行中</small></p></div><span className="live-running"><i/> 运行中 · 02:18</span><button className="live-more">暂停任务　···</button></header><div className="live-layout"><aside className="live-timeline"><header><strong>执行步骤</strong><span>{Math.round((step+1)/steps.length*100)}%</span></header>{steps.map((x,i)=><div key={x} className={i<step?'done':i===step?'active':''}><i>{i<step?'✓':i+1}</i><p><strong>{x}</strong><small>{i<step?'已完成':i===step?'正在执行':'等待执行'}</small></p>{i===step&&<em/>}</div>)}<section><strong>最近动作</strong><p>14:31:08　生成第 3 个分镜</p><p>14:30:54　引用工厂产能资料</p><p>14:30:41　脚本事实检查通过</p></section></aside><main className="live-canvas"><div className="canvas-head"><div><small>实时工作画布</small><strong>{steps[step]}</strong></div><span>自动跟随 Agent</span></div><VideoWorkflowCanvas step={step}/><div className="current-action"><span className="agent-spark">AI</span><p><strong>{step<3?'正在把“批次稳定性”脚本转换为 6 个镜头':'正在组合画面、英文配音和字幕'}</strong><small>使用：英文产品手册 · 质检流程 · 工厂素材 12 项</small></p><i>···</i></div></main><aside className="live-context"><header><strong>任务上下文</strong><small>Agent 可使用的资料与边界</small></header><dl><dt>目标受众</dt><dd>食品原料采购经理</dd><dt>目标市场</dt><dd>马来西亚</dd><dt>核心 CTA</dt><dd>下载英文规格书</dd></dl><section><strong>已调用资料</strong>{['企业产品手册','批次质检流程','工厂素材库'].map((x,i)=><button key={x}><span>{i===2?'素':'文'}</span><p><strong>{x}</strong><small>{i===2?'12 项素材':'已引用'}</small></p><em>✓</em></button>)}</section><section className="live-boundary"><strong>行动边界</strong><p><span>✓</span> 可生成草稿与预览</p><p><span>!</span> 发布前必须人工审核</p></section><section className="live-artifact"><strong>本次产物</strong><button>视频脚本 v2 <span>已生成</span></button><button>分镜方案 <span>{step>2?'已生成':'生成中'}</span></button></section></aside></div></section></div>;
+  const steps = [['选模式','确认产品、平台与内容目标'],['分镜与声音','生成可执行脚本与英文口播'],['选素材','按分镜匹配企业真实素材'],['封面','生成封面与标题候选'],['成片预览','确认成片并交付审核']];
+  useEffect(()=>{const timer=window.setInterval(()=>setStep(s=>s<4?s+1:s),5200);return()=>window.clearInterval(timer)},[]);
+  return <div className="agent-live-overlay"><section className="agent-live-shell lingshu-live"><header className="studio-workbar"><button onClick={onExit}>← 退出观看</button><span className="work-file">▤</span><div><strong>工厂品质 30 秒视频</strong><small>已自动保存</small></div><span className="live-running"><i/> 内容生产 Agent 运行中 · 02:18</span><button>保存草稿</button><button className="work-primary">打开任务详情</button></header><div className="studio-layout"><aside className="studio-steps"><header><small>AI 生成</small><strong>AI 智能素材</strong></header>{steps.map((x,i)=><button key={x[0]} className={i<step?'done':i===step?'active':''} onClick={()=>i<=step&&setStep(i)} disabled={i>step}><i>{i<step?'✓':i+1}</i><span><strong>{x[0]}</strong><small>{x[1]}</small></span>{i===step&&<em/>}</button>)}</aside><main className="studio-operation"><div className="operation-head"><div><span>步骤 {step+1} / {steps.length}</span><h2>{steps[step][0]}</h2><p>{steps[step][1]}</p></div><span className="agent-follow"><i/> Agent 正在操作此页面</span></div><LingshuStepCanvas step={step}/><div className="studio-bottom"><button disabled={step===0} onClick={()=>setStep(s=>Math.max(0,s-1))}>← 上一步</button><div>{steps.map((_,i)=><i key={i} className={i<=step?'active':''}/>)}</div><button disabled={step===4}>{step===4?'已进入审核':'Agent 完成本步后继续 →'}</button></div></main><aside className="studio-context"><header><strong>本次生成依据</strong><small>只显示当前步骤使用的上下文</small></header><section className="selected-product"><span>抹</span><p><strong>食品级抹茶 M-02</strong><small>企业中心 · 已确认产品</small></p></section><dl><dt>目标买家</dt><dd>食品原料采购经理</dd><dt>市场</dt><dd>马来西亚</dd><dt>平台</dt><dd>LinkedIn</dd><dt>CTA</dt><dd>下载英文规格书</dd></dl><section className="context-evidence"><strong>当前引用</strong>{(step<2?['英文产品手册','批次质检流程']:step===2?['工厂视频 8 条','实验室素材 4 条']:['品牌视觉规范','英文标题规则']).map(x=><p key={x}><i>✓</i>{x}</p>)}</section><section className="live-boundary"><strong>行动边界</strong><p><span>✓</span> 可自动生成和匹配</p><p><span>!</span> 发布前必须人工审核</p></section></aside></div></section></div>;
+}
+
+function LingshuStepCanvas({ step }: { step: number }) {
+  if(step===0)return <div className="mode-canvas"><div className="selected-mode"><span>✓ 已选择</span><strong>产品实证视频</strong><p>用规格、包装、工厂与检测资料建立采购判断依据。</p></div><div className="mode-options">{['真人口播','应用场景','渠道合作'].map(x=><button key={x}><span>模式</span><strong>{x}</strong><small>可切换内容生成方式</small></button>)}</div></div>;
+  if(step===1)return <div className="script-canvas"><section><header><strong>英文口播脚本</strong><span>已生成 · 68 词</span></header><h3>Built for consistency at scale</h3><p>From Guizhou&apos;s highlands to your next beverage line. Controlled sourcing, batch-level quality records and export-ready specifications...</p><div><span>00:00—00:05　产地与原料</span><span>00:05—00:12　生产与批次稳定性</span><span>00:12—00:22　检测与认证</span><span>00:22—00:30　规格书 CTA</span></div></section><aside><strong>声音策略</strong><button className="active">英文专业旁白 <span>▶ 试听</span></button><button>仅字幕，无配音</button><button>上传真人口播</button></aside></div>;
+  if(step===2)return <VideoWorkflowCanvas step={2}/>;
+  if(step===3)return <div className="cover-canvas"><section className="cover-preview"><span>GUIZHOU MATCHA</span><strong>Consistency<br/>you can verify.</strong><small>Export-ready specifications for beverage brands</small></section><aside><strong>封面候选</strong>{['质量实证','工厂实力','采购规格'].map((x,i)=><button key={x} className={i===0?'active':''}><span>0{i+1}</span><p><strong>{x}</strong><small>{i===0?'Agent 推荐':'备选方案'}</small></p></button>)}</aside></div>;
+  return <div className="final-preview"><section><div className="final-video"><button>▶</button><span>00:30</span><strong>Consistency you can verify.</strong></div><div className="final-track"><i/><i/><i/><i/><i/><i/></div></section><aside><span>成片已生成</span><h3>工厂品质 30 秒视频</h3><dl><dt>画幅</dt><dd>1080 × 1920</dd><dt>语言</dt><dd>English</dd><dt>字幕</dt><dd>已烧录</dd><dt>事实检查</dt><dd>5 / 6 通过</dd></dl><p>“月产 200 吨”仍需质量负责人确认，通过后可进入排期。</p><button>提交审核</button></aside></div>;
 }
 
 function VideoWorkflowCanvas({ step }: { step: number }) {
@@ -148,21 +174,25 @@ function VideoWorkflowCanvas({ step }: { step: number }) {
 }
 
 function ReviewWorkbench() {
-  return <div className="review-workbench"><aside><div className="review-queue-head"><strong>待我审核</strong><span>7</span></div>{[['工厂品质 30 秒视频','事实与技术参数','高'],['经销合作政策图文','商务承诺','高'],['马来语应用配方短片','本地化表达','中']].map((r,i)=><button key={r[0]} className={i===0?'active':''}><span className="review-icon">{i+1}</span><span><strong>{r[0]}</strong><small>{r[1]} · {r[2]}风险</small></span></button>)}</aside><article><div className="review-doc-head"><div><small>LinkedIn · 英文视频脚本</small><h3>From Guizhou&apos;s highlands to your next beverage line</h3></div><span>版本 3</span></div><p>Built for consistency at scale. Our matcha production combines controlled sourcing, batch-level quality records and export-ready specifications.</p><div className="claim-check"><strong>事实核验</strong><span className="checked">✓ 产地描述已引用产品手册</span><span className="checked">✓ 批次记录已引用质检流程</span><span className="warning">! “每月 200 吨”产能待负责人确认</span></div><footer><button>退回修改</button><button>补充批注</button><button className="approve">确认通过并进入排期</button></footer></article></div>;
+  const [selected,setSelected]=useState(0); const [dialog,setDialog]=useState<string|null>(null);
+  const rows=[['工厂品质 30 秒视频','事实与技术参数','高'],['经销合作政策图文','商务承诺','高'],['马来语应用配方短片','本地化表达','中']];
+  return <><div className="review-workbench"><aside><div className="review-queue-head"><strong>待我审核</strong><span>7</span></div>{rows.map((r,i)=><button key={r[0]} className={i===selected?'active':''} onClick={()=>setSelected(i)}><span className="review-icon">{i+1}</span><span><strong>{r[0]}</strong><small>{r[1]} · {r[2]}风险</small></span></button>)}</aside><article><div className="review-doc-head"><div><small>LinkedIn · 英文内容</small><h3>{rows[selected][0]}</h3></div><span>版本 3</span></div><p>Built for consistency at scale. Our production combines controlled sourcing, batch-level quality records and export-ready specifications.</p><div className="claim-check"><strong>事实核验</strong><span className="checked">✓ 产地描述已引用产品手册</span><span className="checked">✓ 批次记录已引用质检流程</span><span className="warning">! 关键参数待负责人确认</span></div><footer><button onClick={()=>setDialog('退回修改')}>退回修改</button><button onClick={()=>setDialog('补充批注')}>补充批注</button><button className="approve" onClick={()=>setDialog('确认通过并进入排期')}>确认通过并进入排期</button></footer></article></div>{dialog&&<ActionDialog title={dialog} desc={`对“${rows[selected][0]}”执行此审核动作，结果将记入行动账本。`} onClose={()=>setDialog(null)}/>}</>;
 }
 
 function SchedulePage() {
   const [tab, setTab] = useState('排期编排');
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
   return <>
-    <PageHeader title="排期与分发" desc="把审核通过的内容排入日历，并处理发布异常。" action={tab==='排期编排'?'新建排期':'批量重试'} secondary="导出视图"/>
+    <PageHeader title="排期与分发" desc="把审核通过的内容排入日历，并处理发布异常。" action={tab==='排期编排'?'新建排期':'批量重试'} secondary="导出视图" onAction={()=>setDialog({title:tab==='排期编排'?'新建排期':'批量重试',desc:tab==='排期编排'?'为已审核内容选择平台、账号与发布时间。':'将重试 3 条发布异常任务。'})} onSecondary={()=>setDialog({title:'导出排期视图',desc:'导出当前排期与发布状态。'})}/>
     <div className="content-flow-switch schedule-flow-switch"><button className={tab==='排期编排'?'active':''} onClick={()=>setTab('排期编排')}><i>1</i><span><strong>排期编排</strong><small>安排平台、账号与发布时间</small></span><b>5 待排</b></button><em>→</em><button className={tab==='发布处理'?'active':''} onClick={()=>setTab('发布处理')}><i>2</i><span><strong>发布处理</strong><small>发布检查、异常与重试</small></span><b className="attention-count">3 待处理</b></button></div>
-    {tab==='排期编排'?<><div className="compact-ops-bar"><p><b>今日节奏</b>　09:30 LinkedIn 已发布　·　11:00 Meta 待发布　·　16:30 邮件待审核</p><div><span>本周 26</span><span>已就绪 21</span></div></div><section className="schedule-workspace schedule-simple"><aside className="unscheduled"><header><div><strong>待排内容</strong><small>拖入日历完成编排</small></div><span>5</span></header>{[['渠道利润政策','LinkedIn','审核通过'],['采购规格清单','邮件','待选账号'],['应用配方短片','YouTube','审核通过']].map((item,i)=><button key={item[0]}><i className={`channel-dot c${i}`}/><span><strong>{item[0]}</strong><small>{item[1]} · {item[2]}</small></span><b>⠿</b></button>)}</aside><section className="panel schedule-canvas"><div className="panel-title"><div><h2>本周发布编排</h2><p>Asia/Shanghai · 受众活跃时间已标注</p></div><div className="filter-chips"><button>全部来源⌄</button><button>周视图⌄</button></div></div><TrafficVisual tab="分发计划"/></section></section></>:<PublishExceptionWorkbench/>}
+    {tab==='排期编排'?<><div className="compact-ops-bar"><p><b>今日节奏</b>　09:30 LinkedIn 已发布　·　11:00 Meta 待发布　·　16:30 邮件待审核</p><div><span>本周 26</span><span>已就绪 21</span></div></div><section className="schedule-workspace schedule-simple"><aside className="unscheduled"><header><div><strong>待排内容</strong><small>点击内容完成编排</small></div><span>5</span></header>{[['渠道利润政策','LinkedIn','审核通过'],['采购规格清单','邮件','待选账号'],['应用配方短片','YouTube','审核通过']].map((item,i)=><button key={item[0]} onClick={()=>setDialog({title:`编排：${item[0]}`,desc:`为 ${item[1]} 选择发布账号和受众活跃时间。`})}><i className={`channel-dot c${i}`}/><span><strong>{item[0]}</strong><small>{item[1]} · {item[2]}</small></span><b>⠿</b></button>)}</aside><section className="panel schedule-canvas"><div className="panel-title"><div><h2>本周发布编排</h2><p>Asia/Shanghai · 受众活跃时间已标注</p></div><div className="filter-chips"><button onClick={()=>setDialog({title:'来源筛选',desc:'可按人员创建或数字员工执行筛选排期。'})}>全部来源⌄</button><button onClick={()=>setDialog({title:'切换日历视图',desc:'可切换周视图或月视图查看发布计划。'})}>周视图⌄</button></div></div><TrafficVisual tab="分发计划" onSelect={item=>setDialog({title:'排期详情',desc:`${item}的发布时间、账号和审核状态已载入。`})}/></section></section></>:<PublishExceptionWorkbench onAction={(title,desc)=>setDialog({title,desc})}/>}
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} onClose={()=>setDialog(null)}/>}
   </>;
 }
 
-function PublishExceptionWorkbench(){
+function PublishExceptionWorkbench({onAction}:{onAction:(title:string,desc:string)=>void}){
   const rows=[['邮件渠道政策','企业邮箱','内容审核未通过','补充渠道授权依据','高'],['应用场景获客','Meta','账号授权 3 天后过期','重新授权账号','中'],['应用配方短片','YouTube','平台处理超时','立即重试','中']];
-  return <section className="panel publish-exceptions"><div className="panel-title"><div><h2>发布异常处理</h2><p>只展示阻塞发布或需要人工确认的事项</p></div><div className="filter-chips"><button>全部平台⌄</button><button>全部来源⌄</button></div></div><div className="exception-table"><div className="exception-row head"><span>内容</span><span>平台</span><span>阻塞原因</span><span>建议动作</span><span>操作</span></div>{rows.map(r=><div className="exception-row" key={r[0]}><span><strong>{r[0]}</strong><small>{r[4]}优先级</small></span><span>{r[1]}</span><span>{r[2]}</span><span>{r[3]}</span><span><button>查看</button><button className="primary">处理</button></span></div>)}</div><aside className="publish-check-summary"><div><strong>发布前自动检查</strong><small>内容审核、账号授权、链接追踪和频次冲突</small></div>{[['内容审核','24 / 26'],['平台授权','5 / 5'],['链接追踪','26 / 26'],['频次冲突','1 项']].map((x,i)=><span key={x[0]} className={i===0||i===3?'warn':''}>{x[0]} <b>{x[1]}</b></span>)}</aside></section>;
+  return <section className="panel publish-exceptions"><div className="panel-title"><div><h2>发布异常处理</h2><p>只展示阻塞发布或需要人工确认的事项</p></div><div className="filter-chips"><button onClick={()=>onAction('平台筛选','可按 LinkedIn、Meta、YouTube 或企业邮箱筛选发布异常。')}>全部平台⌄</button><button onClick={()=>onAction('来源筛选','可按人员或数字员工执行来源筛选。')}>全部来源⌄</button></div></div><div className="exception-table"><div className="exception-row head"><span>内容</span><span>平台</span><span>阻塞原因</span><span>建议动作</span><span>操作</span></div>{rows.map(r=><div className="exception-row" key={r[0]}><span><strong>{r[0]}</strong><small>{r[4]}优先级</small></span><span>{r[1]}</span><span>{r[2]}</span><span>{r[3]}</span><span><button onClick={()=>onAction(`异常详情：${r[0]}`,`${r[1]}：${r[2]}。建议${r[3]}。`)}>查看</button><button className="primary" onClick={()=>onAction(`处理：${r[0]}`,`将执行“${r[3]}”并记录处理结果。`)}>处理</button></span></div>)}</div><aside className="publish-check-summary"><div><strong>发布前自动检查</strong><small>内容审核、账号授权、链接追踪和频次冲突</small></div>{[['内容审核','24 / 26'],['平台授权','5 / 5'],['链接追踪','26 / 26'],['频次冲突','1 项']].map((x,i)=><span key={x[0]} className={i===0||i===3?'warn':''}>{x[0]} <b>{x[1]}</b></span>)}</aside></section>;
 }
 
 function AgentsPage() {
@@ -175,10 +205,14 @@ function AgentsPage() {
 
 function ApprovalsPage() {
   const items = [['预算调整','分发增长数字员工','将 LinkedIn 预算提高 12%','预计 +4 条合格询盘','高'],['商务承诺','询盘接待数字员工','客户询问马来西亚独家代理','必须由销售总监确认','高'],['内容事实','内容生产数字员工','英文检测报告有效期待确认','等待质量负责人','中'],['发布异常','内容发布数字员工','Instagram 授权将在 3 天后过期','重新授权账号','中']];
+  const [handled,setHandled]=useState<Record<string,string>>({});
+  const [dialog,setDialog]=useState<{title:string;desc:string;action?:()=>void}|null>(null);
+  const decide=(name:string,result:string)=>setHandled(old=>({...old,[name]:result}));
   return <>
-    <PageHeader title="审批与异常" desc="集中处理数字员工无法自主完成的受限动作和异常。" action="批量批准" secondary="转交处理"/>
+    <PageHeader title="审批与异常" desc="集中处理数字员工无法自主完成的受限动作和异常。" action="批量批准" secondary="转交处理" onAction={()=>setDialog({title:'批量批准',desc:`将批准 ${items.filter(x=>!handled[x[0]]).length} 项待处理事项，结果会写入审批记录。`,action:()=>setHandled(Object.fromEntries(items.map(x=>[x[0],'已批准'])))})} onSecondary={()=>setDialog({title:'转交处理',desc:'选择接收人后，未处理事项将进入对方待办并保留原审批期限。'})}/>
     <div className="stat-grid four"><Metric label="待审批" value="7"/><Metric label="运行异常" value="3" change="1 项高风险" warn/><Metric label="平均处理时间" value="18分钟"/><Metric label="今日自动通过" value="86" change="规则命中"/></div>
-    <section className="panel"><div className="approval-list"><div className="approval-row head"><span>事项</span><span>来源</span><span>数字员工请求</span><span>影响与原因</span><span>操作</span></div>{items.map(item=><div className="approval-row" key={item[0]}><span><strong>{item[0]}</strong><small className={item[4]==='高'?'risk-high':''}>{item[4]}风险</small></span><span>{item[1]}</span><span>{item[2]}</span><span>{item[3]}</span><span><button>驳回</button><button className="approve">批准</button></span></div>)}</div></section>
+    <section className="panel"><div className="approval-list"><div className="approval-row head"><span>事项</span><span>来源</span><span>数字员工请求</span><span>影响与原因</span><span>操作</span></div>{items.map(item=><div className={`approval-row ${handled[item[0]]?'handled':''}`} key={item[0]}><span><strong>{item[0]}</strong><small className={item[4]==='高'?'risk-high':''}>{handled[item[0]]||`${item[4]}风险`}</small></span><span>{item[1]}</span><span>{item[2]}</span><span>{item[3]}</span><span>{handled[item[0]]?<b className="decision-result">✓ {handled[item[0]]}</b>:<><button onClick={()=>setDialog({title:`驳回「${item[0]}」`,desc:'驳回后数字员工将停止该动作，并依据你的说明重新生成方案。',action:()=>decide(item[0],'已驳回')})}>驳回</button><button className="approve" onClick={()=>setDialog({title:`批准「${item[0]}」`,desc:item[3]+'。确认后数字员工将继续执行。',action:()=>decide(item[0],'已批准')})}>批准</button></>}</span></div>)}</div></section>
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="确认处理" onClose={()=>setDialog(null)} onConfirm={dialog.action}/>}
   </>;
 }
 
@@ -198,30 +232,30 @@ function DistributionPage() {
 
 function TrafficPage() {
   const [tab, setTab] = useState('投流管理');
-  const [source, setSource] = useState<SourceView>('全部');
+  const [platform,setPlatform]=useState('全部平台');
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
   const tabs = ['投流管理', '受众', '流量分析', '优化建议'];
-  const actions = sourceActions(source, '创建投流计划');
   return <>
-    <PageHeader title="广告投放" desc="管理付费流量，并监督数字员工的预算、受众和素材动作。" action={actions.action} secondary={actions.secondary} />
-    <SourceSwitcher active={source} setActive={setSource}/>
-    {source !== '全部' && <div className={`source-context ${source === '待我处理' ? 'attention' : ''}`}><span>{source === '人员创建' ? '人工投放' : source === '数字员工执行' ? '自主执行中' : '待审批预算'}</span><strong>{source === '人员创建' ? '显示由人员创建和调整的投流计划' : source === '数字员工执行' ? '数字员工正在运行 4 个 Campaign，预算动作均在授权范围内' : '2 项预算调整等待批准，预计影响 4 条合格询盘'}</strong></div>}
+    <PageHeader title="广告投放" desc="管理付费流量，并监督数字员工的预算、受众和素材动作。" secondary="导出视图" onSecondary={()=>setDialog({title:'导出投流视图',desc:'将导出当前项目的预算、访问、询盘与成本数据。'})}/>
     <Tabs items={tabs} active={tab} setActive={setTab} />
     <div className="traffic-command"><div className="command-primary"><span>今日预算消耗</span><strong>¥ 18,420 <small>/ ¥ 24,000</small></strong><i><em style={{width:'76%'}}/></i><p>节奏正常，预计 22:40 完成今日预算</p></div><div><span>新增有效询盘</span><strong>14</strong><small>目标 12 · 已超 16%</small></div><div><span>单询盘成本</span><strong>¥ 1,316</strong><small className="positive">较目标低 11%</small></div><div className="command-alert"><span>待决策动作</span><strong>2</strong><small>预计影响 4 条询盘</small></div></div>
-    <div className="two-col-wide"><section className="panel table-panel"><div className="panel-title"><div><h2>{tab === '投流管理' ? 'Campaign 操作台' : tab}</h2><p>当前项目 · 2026.08.15 — 08.28</p></div><div className="filter-chips"><button>全部平台⌄</button><button>批量操作</button></div></div>
+    <div className="two-col-wide"><section className="panel table-panel"><div className="panel-title"><div><h2>{tab === '投流管理' ? 'Campaign 操作台' : tab}</h2><p>当前项目 · 2026.08.15 — 08.28</p></div><div className="filter-chips"><button onClick={()=>setPlatform(p=>p==='全部平台'?'LinkedIn':'全部平台')}>{platform}⌄</button><button onClick={()=>setDialog({title:'批量操作 Campaign',desc:'已选择当前筛选范围，可批量调整预算、暂停或更换素材。'})}>批量操作</button></div></div>
       {tab === '投流管理' || tab === '优化建议' ? <div className="data-table traffic-table ops-table"><div className="tr th"><span>Campaign／状态</span><span>平台</span><span>预算节奏</span><span>访问</span><span>询盘</span><span>成本</span><span>下一动作</span></div>{[
         ['● 工厂品质验证','LinkedIn','85% · 正常','6,800','63','¥968','维持'],['● 应用场景获客','Meta','90% · 偏快','12,400','71','¥1,113','降预算 8%'],['● 采购需求搜索','Google','89% · 正常','4,900','38','¥1,263','扩展词包'],['Ⅱ 品牌认知视频','YouTube','83% · 已暂停','2,380','14','¥2,142','更换素材'],
-      ].map(r=><button className="tr" key={r[0]}>{r.map((x,i)=><span key={i} className={i===0?'strong-cell':i===6?'row-action':''}>{x}</span>)}</button>)}</div> : <TrafficVisual tab={tab}/>}
-    </section><AgentNote agent="分发增长数字员工" action={source === '数字员工执行' ? '查看行动依据' : '审批预算调整'}><h3>{source === '数字员工执行' ? '已在权限内调整 8% 预算' : '建议重新分配 20% 预算'}</h3><p>“渠道利润与合作政策”内容的合格询盘率高出消费场景短片 38%。每次调整均记录依据、权限和结果。</p><div className="impact"><span><b>+12</b> 有效询盘</span><span><b>+4</b> 合格客户</span><span><b>¥3,200</b> 预计节省</span></div></AgentNote></div>
+      ].filter(r=>platform==='全部平台'||r[1]===platform).map(r=><button className="tr" key={r[0]} onClick={()=>setDialog({title:r[0].replace(/^[●Ⅱ]\s*/,''),desc:`${r[1]} Campaign：预算节奏 ${r[2]}，当前建议“${r[6]}”。`})}>{r.map((x,i)=><span key={i} className={i===0?'strong-cell':i===6?'row-action':''}>{x}</span>)}</button>)}</div> : <TrafficVisual tab={tab}/>}
+    </section><AgentNote agent="分发增长数字员工" action="审批预算调整" onAction={()=>setDialog({title:'审批预算调整',desc:'将 20% 预算从低效 Campaign 调整至“渠道利润与合作政策”，预计节省 ¥3,200。'})}><h3>建议重新分配 20% 预算</h3><p>“渠道利润与合作政策”内容的合格询盘率高出消费场景短片 38%。每次调整均记录依据、权限和结果。</p><div className="impact"><span><b>+12</b> 有效询盘</span><span><b>+4</b> 合格客户</span><span><b>¥3,200</b> 预计节省</span></div></AgentNote></div>
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} onClose={()=>setDialog(null)}/>}
   </>;
 }
 
-function TrafficVisual({ tab }: { tab: string }) {
-  if (tab === '分发计划') return <div className="week-grid">{['周一','周二','周三','周四','周五'].map((d,i)=><div key={d}><strong>{d}</strong><button><small>{9+i}:30</small><span>{['LinkedIn 工厂视频','Meta 应用图文','YouTube 品质片','邮件渠道政策','再营销案例'][i]}</span><em>{i<3?'已发布':'已排期'}</em></button></div>)}</div>;
+function TrafficVisual({ tab, onSelect }: { tab: string; onSelect?: (item:string)=>void }) {
+  if (tab === '分发计划') return <div className="week-grid">{['周一','周二','周三','周四','周五'].map((d,i)=>{const item=['LinkedIn 工厂视频','Meta 应用图文','YouTube 品质片','邮件渠道政策','再营销案例'][i];return <div key={d}><strong>{d}</strong><button onClick={()=>onSelect?.(item)}><small>{9+i}:30</small><span>{item}</span><em>{i<3?'已发布':'已排期'}</em></button></div>})}</div>;
   if (tab === '受众') return <div className="audience-grid">{[['食品原料进口商','18,400'],['饮品经销商','26,800'],['连锁茶饮采购','9,600'],['网站高意向访问者','4,280'],['再营销受众','12,700'],['目标账户名单','312 家']].map(a=><div key={a[0]}><span>{a[0]}</span><b>{a[1]}</b><small>已同步 · 可使用</small></div>)}</div>;
   return <div className="chart-box"><div className="bars">{[42,58,49,76,68,88,82,96,90,112,105,126].map((h,i)=><i key={i} style={{height:`${h}px`}}/>)}</div><div className="chart-labels"><span>8月15日</span><span>精准访问持续增长</span><span>8月28日</span></div><div className="channel-split">{[['LinkedIn','34%'],['Meta','29%'],['Google','24%'],['YouTube','13%']].map(c=><div key={c[0]}><span>{c[0]}</span><b>{c[1]}</b></div>)}</div></div>;
 }
 
 function CustomerOperationsPage({ go }: { go: (view: View) => void }) {
+  const [reportOpen,setReportOpen]=useState(false);
   return <>
     <div className="customer-ops-heading"><div><p className="eyebrow">黔海 · 客户经营</p><h1>客户经营</h1><p>先看自动化经营结果与风险，需要时再进入现场处理具体客户。</p></div><button className="primary" onClick={()=>go('customerLive')}><span className="live-entry-dot"/>进入客户工作现场 <b>3</b></button></div>
     <div className="customer-ops-stats">
@@ -244,7 +278,8 @@ function CustomerOperationsPage({ go }: { go: (view: View) => void }) {
         <button className="ops-all-live" onClick={()=>go('customerLive')}>进入现场统一处理 →</button>
       </aside>
     </div>
-    <section className="panel ops-results"><div className="panel-title"><div><h2>近 7 天经营结果</h2><p>汇总 Agent 自动执行与人工协同后的业务产出</p></div><button>查看完整报告</button></div><div className="ops-result-grid"><div className="ops-chart"><div className="ops-bars">{[34,48,42,65,58,78,92].map((h,i)=><i key={i} style={{height:`${h}%`}}><span>{[12,18,15,24,21,31,36][i]}</span></i>)}</div><div><span>8月23日</span><strong>自动完成动作数</strong><span>今天</span></div></div>{[['自动回复','86','91% 无需人工修改'],['资格判断','34','18 条高意向'],['自动跟进','28','按时完成率 89%'],['创建商机','11','商机金额 ¥286万']].map(x=><div className="ops-result-card" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small>{x[2]}</small></div>)}</div></section>
+      <section className="panel ops-results"><div className="panel-title"><div><h2>近 7 天经营结果</h2><p>汇总 Agent 自动执行与人工协同后的业务产出</p></div><button onClick={()=>setReportOpen(true)}>查看完整报告</button></div><div className="ops-result-grid"><div className="ops-chart"><div className="ops-bars">{[34,48,42,65,58,78,92].map((h,i)=><i key={i} style={{height:`${h}%`}}><span>{[12,18,15,24,21,31,36][i]}</span></i>)}</div><div><span>8月23日</span><strong>自动完成动作数</strong><span>今天</span></div></div>{[['自动回复','86','91% 无需人工修改'],['资格判断','34','18 条高意向'],['自动跟进','28','按时完成率 89%'],['创建商机','11','商机金额 ¥286万']].map(x=><div className="ops-result-card" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small>{x[2]}</small></div>)}</div></section>
+    {reportOpen&&<ActionDialog title="客户经营完整报告" desc="已汇总近 7 天 128 次自动处理、18 条高意向客户与 21 个推进中商机。报告将包含渠道、Agent 贡献和人工介入明细。" confirm="导出报告" onClose={()=>setReportOpen(false)}/>}
   </>;
 }
 
@@ -314,10 +349,13 @@ function QuoteWorkbench() {
 }
 
 function RevenuePage() {
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
+  const [model,setModel]=useState('线性归因');
   return <>
-    <PageHeader title="收入归因" desc="区分数字员工自主增长、人工协同增长与自然／纯人工增长。" secondary="导出归因报告"/>
+    <PageHeader title="收入归因" desc="区分数字员工自主增长、人工协同增长与自然／纯人工增长。" secondary="导出归因报告" onSecondary={()=>setDialog({title:'导出归因报告',desc:`将按${model}生成收入、商机及完整证据链报告，包含当前筛选范围和归因口径。`})}/>
     <div className="stat-grid four"><Metric label="数字员工自主增长" value="¥68万" change="18%"/><Metric label="人工＋AI 协同增长" value="¥168万" change="44%"/><Metric label="自然／纯人工增长" value="¥146万" change="38%"/><Metric label="可归因商机" value="¥486万" change="完整率 92%"/></div>
-    <section className="panel"><div className="panel-title"><div><h2>转化证据链</h2><p>从经营任务、执行来源和客户触点追溯到商业结果</p></div><button>切换归因模型⌄</button></div><Attribution/></section>
+    <section className="panel"><div className="panel-title"><div><h2>转化证据链</h2><p>从经营任务、执行来源和客户触点追溯到商业结果</p></div><button onClick={()=>{const next=model==='线性归因'?'最终触点归因':model==='最终触点归因'?'首次触点归因':'线性归因';setModel(next);setDialog({title:'归因模型已切换',desc:`当前采用${next}，收入贡献和证据链口径已重新计算。`})}}>{model}⌄</button></div><Attribution/></section>
+    {dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="完成" onClose={()=>setDialog(null)}/>}
   </>;
 }
 
@@ -327,6 +365,7 @@ function Attribution(){return <div className="attribution"><div><span>首次触�
 
 function OrganizationPage({ view }: { view: View }) {
   const [permissionTab, setPermissionTab] = useState(view === 'accounts' ? '账号连接' : '权限管理');
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
   const configs: Record<View, {desc:string; metrics:string[][]}> = {
     structure:{desc:'管理组织归属、跨部门项目团队、外部协作与责任权限。',metrics:[['运行中项目','8'],['跨部门项目','5'],['外部协作团队','3'],['待补责任岗位','2']]},
     permissions:{desc:'管理角色、数据范围、审批流程与 Agent 行动边界。',metrics:[['预置角色','8'],['权限策略','36'],['审批流程','9'],['异常权限','1']]},
@@ -337,7 +376,7 @@ function OrganizationPage({ view }: { view: View }) {
   };
   const item=configs[view];
   const mergedPermissionPage = view === 'permissions' || view === 'accounts';
-  return <><PageHeader title={mergedPermissionPage ? '权限与账号' : viewNames[view]} desc={mergedPermissionPage ? '统一管理成员权限、数字员工行动边界和平台账号连接。' : item.desc} action={view==='structure'?'新建组织节点':undefined}/>{mergedPermissionPage && <Tabs items={['权限管理','账号连接']} active={permissionTab} setActive={setPermissionTab}/>}<div className="stat-grid four">{item.metrics.map(m=><Metric key={m[0]} label={m[0]} value={m[1]}/>)}</div><section className="panel org-panel">{view==='structure'?<OrgTree/>:mergedPermissionPage?(permissionTab === '权限管理'?<PermissionMatrix/>:<AccountGrid/>):view==='data'?<DataManagement/>:<SecurityPage/>}</section></>;
+  return <><PageHeader title={mergedPermissionPage ? '权限与账号' : viewNames[view]} desc={mergedPermissionPage ? '统一管理成员权限、数字员工行动边界和平台账号连接。' : item.desc} action={view==='structure'?'新建组织节点':undefined} onAction={()=>setDialog({title:'新建组织节点',desc:'创建事业部、品牌或职能团队，并设置负责人、成员和默认项目权限。'})}/>{mergedPermissionPage && <Tabs items={['权限管理','账号连接']} active={permissionTab} setActive={setPermissionTab}/>}<div className="stat-grid four">{item.metrics.map(m=><Metric key={m[0]} label={m[0]} value={m[1]}/>)}</div><section className="panel org-panel">{view==='structure'?<OrgTree/>:mergedPermissionPage?(permissionTab === '权限管理'?<PermissionMatrix/>:<AccountGrid/>):view==='data'?<DataManagement/>:<SecurityPage/>}</section>{dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="创建" onClose={()=>setDialog(null)}/>}</>;
 }
 
 type OrgView = '组织结构' | '项目团队' | '外部协作' | '权限影响';
@@ -373,9 +412,11 @@ const orgViewData: Record<OrgView, { title:string; subtitle:string; items:Array<
 function OrgTree(){
   const [activeView,setActiveView]=useState<OrgView>('组织结构');
   const [selected,setSelected]=useState(1);
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
   const current=orgViewData[activeView];
   const selectView=(view:OrgView)=>{setActiveView(view);setSelected(view==='组织结构'?1:0)};
-  return <div className="org-workspace">
+  const handleAction=(e:React.MouseEvent<HTMLDivElement>)=>{const button=(e.target as HTMLElement).closest('button');if(!button)return;const label=button.textContent?.trim()||'';if(label==='•••')setDialog({title:'组织更多操作',desc:'可导入组织成员、调整层级、停用节点或导出当前组织视图。'});else if(label.startsWith('＋ 新建'))setDialog({title:label.replace('＋ ',''),desc:'填写名称、负责人、授权范围和有效期后即可创建。'});else if(['查看审计记录','编辑配置','查看全部项目','调整团队','调整边界'].some(x=>label.startsWith(x)))setDialog({title:label.replace(' →',''),desc:'相关配置与历史记录已载入。确认后可继续完成调整，所有变更均会写入审计日志。'});};
+  return <div className="org-workspace" onClick={handleAction}>
     <div className="org-view-tabs">{(['组织结构','项目团队','外部协作','权限影响'] as OrgView[]).map((view,i)=><button key={view} className={activeView===view?'active':''} onClick={()=>selectView(view)}><span>{['组','项','协','权'][i]}</span><strong>{view}</strong>{view==='权限影响'&&<em>2</em>}</button>)}</div>
     <div className="org-layout">
       <aside className="org-tree">
@@ -385,7 +426,7 @@ function OrgTree(){
         <button className="org-add">＋ 新建{activeView==='组织结构'?'组织节点':activeView==='项目团队'?'项目团队':activeView==='外部协作'?'合作关系':'成员授权'}</button>
       </aside>
       <OrgDetail view={activeView} selected={selected}/>
-    </div>
+    </div>{dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="继续" onClose={()=>setDialog(null)}/>}
   </div>
 }
 
@@ -410,17 +451,54 @@ function Summary({label,value,note,warn}:{label:string;value:string;note:string;
 function SectionTitle({title,note,action}:{title:string;note:string;action?:string}){return <div className="org-section-title"><div><h3>{title}</h3><p>{note}</p></div>{action&&<button>{action} →</button>}</div>}
 function ProjectCard({title,market,status,people,warn}:{title:string;market:string;status:string;people:string;warn?:boolean}){return <button><span><i className={warn?'amber':''}>项</i><span><strong>{title}</strong><small>{market}</small></span></span><span><b>{people}</b><em className={warn?'warn':''}>{status}</em></span></button>}
 
-function PermissionMatrix(){const roles=['集团管理员','事业部负责人','项目负责人','内容运营','内容审核','投流人员','海外销售','外部协作者']; return <div><div className="panel-title"><div><h2>角色与权限矩阵</h2><p>同时控制功能动作和组织／品牌／项目数据范围</p></div><button>编辑权限</button></div><div className="permission-table"><div className="ptr head"><span>角色</span>{['项目','内容','投流','询盘','报价订单','Agent'].map(x=><span key={x}>{x}</span>)}</div>{roles.map((r,i)=><div className="ptr" key={r}><strong>{r}</strong>{[0,1,2,3,4,5].map(j=><span key={j} className={(i+j)%4===0?'limited':''}>{(i+j)%4===0?'审批':i===7&&j>2?'—':'✓'}</span>)}</div>)}</div></div>}
+function PermissionMatrix(){const roles=['集团管理员','事业部负责人','项目负责人','内容运营','内容审核','投流人员','海外销售','外部协作者']; const [open,setOpen]=useState(false); return <div><div className="panel-title"><div><h2>角色与权限矩阵</h2><p>同时控制功能动作和组织／品牌／项目数据范围</p></div><button onClick={()=>setOpen(true)}>编辑权限</button></div><div className="permission-table"><div className="ptr head"><span>角色</span>{['项目','内容','投流','询盘','报价订单','Agent'].map(x=><span key={x}>{x}</span>)}</div>{roles.map((r,i)=><div className="ptr" key={r}><strong>{r}</strong>{[0,1,2,3,4,5].map(j=><span key={j} className={(i+j)%4===0?'limited':''}>{(i+j)%4===0?'审批':i===7&&j>2?'—':'✓'}</span>)}</div>)}</div>{open&&<ActionDialog title="编辑角色权限" desc="调整功能动作、数据范围和 Agent 行动边界。高风险权限变更提交后需要管理员复核。" confirm="保存草稿" onClose={()=>setOpen(false)}/>}</div>}
 
-function AccountGrid(){return <div><div className="panel-title"><div><h2>平台与账号连接</h2><p>账号归属、可用项目、授权范围和连接状态</p></div><button>连接新账号</button></div><div className="account-grid">{[['LinkedIn','4','正常'],['Meta','6','1 个即将过期'],['Google Ads','2','正常'],['YouTube','3','正常'],['WhatsApp Business','4','正常'],['企业邮箱','12','2 个待验证']].map((a,i)=><button key={a[0]}><span className={`platform-icon p${i}`}>{a[0][0]}</span><span><strong>{a[0]}</strong><small>{a[1]} 个账号</small></span><em className={a[2]==='正常'?'good':'warn'}>{a[2]}</em></button>)}</div></div>}
+const accountGroups = [
+  {title:'广告投流账户',desc:'管理广告费、Campaign 与转化追踪',tone:'blue',accounts:[
+    {name:'Google Ads',icon:'G',count:'3',status:'正常'}, {name:'Meta Ads',icon:'M',count:'5',status:'1 个即将过期'}, {name:'TikTok Ads',icon:'TK',count:'2',status:'正常'},
+  ]},
+  {title:'社媒运营账户',desc:'用于内容发布、排期和互动管理',tone:'violet',accounts:[
+    {name:'TikTok',icon:'TK',count:'4',status:'正常'}, {name:'Instagram',icon:'IG',count:'5',status:'正常'}, {name:'Facebook',icon:'f',count:'4',status:'正常'}, {name:'YouTube',icon:'YT',count:'3',status:'正常'},
+  ]},
+  {title:'其他社交与沟通',desc:'用于客户触达、私域沟通和社群运营',tone:'green',accounts:[
+    {name:'LinkedIn',icon:'in',count:'2',status:'正常'}, {name:'WhatsApp Business',icon:'WA',count:'2',status:'正常'}, {name:'Telegram',icon:'TG',count:'1',status:'1 个待验证'},
+  ]},
+];
 
-function DataManagement(){return <div><div className="panel-title"><div><h2>数据质量</h2><p>数据源、字段映射、导入导出和保留策略</p></div><button>立即同步</button></div><div className="data-health"><div className="health-score"><b>96.8%</b><span>整体完整率</span></div>{[['客户重复记录','27','建议合并'],['待匹配询盘','14','需要确认'],['异常渠道数据','2','正在重试'],['最近同步','3 分钟前','全部数据源']].map(x=><button key={x[0]}><span>{x[0]}</span><b>{x[1]}</b><small>{x[2]}</small></button>)}</div></div>}
+function AccountGrid(){
+  const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);
+  return <div className="account-center"><div className="panel-title"><div><h2>平台与账号连接</h2><p>按业务用途分类管理，分开配置投放、发布与沟通权限</p></div><button onClick={()=>setDialog({title:'连接新账号',desc:'先选择账号类型与平台，再设置归属组织、可用项目、授权范围和可执行动作。'})}>连接新账号</button></div><div className="account-groups">{accountGroups.map(group=><section className={`account-group ${group.tone}`} key={group.title}><header><span className="account-group-icon">{group.title.slice(0,1)}</span><div><h3>{group.title}</h3><p>{group.desc}</p></div><b>{group.accounts.reduce((sum,a)=>sum+Number(a.count),0)} 个</b></header><div className="account-grid">{group.accounts.map(a=><button key={a.name} onClick={()=>setDialog({title:`${a.name} 账号详情`,desc:`已连接 ${a.count} 个账号，状态：${a.status}。可继续检查账号归属、项目范围、授权动作或刷新凭证。`})}><span className="platform-icon">{a.icon}</span><span><strong>{a.name}</strong><small>{a.count} 个账号</small></span><em className={a.status==='正常'?'good':'warn'}>{a.status}</em></button>)}</div></section>)}</div>{dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="继续" onClose={()=>setDialog(null)}/>}</div>
+}
 
-function SecurityPage(){return <div><div className="panel-title"><div><h2>Agent 与系统安全边界</h2><p>高风险动作必须经过人工确认</p></div><button>查看审计日志</button></div><div className="security-list">{[['市场策略 Agent','可读取项目与市场数据','不可修改预算'],['内容生产 Agent','可生成内容','发布前必须人工审核'],['分发增长 Agent','可生成投流方案','预算调整必须审批'],['询盘接待 Agent','可生成回复','价格与代理承诺禁止自动发送'],['成交推进 Agent','可创建跟进任务','不可自动报价或确认订单']].map(x=><div key={x[0]}><span className="agent-spark">AI</span><span><strong>{x[0]}</strong><small>{x[1]}</small></span><em>{x[2]}</em><button>配置</button></div>)}</div></div>}
+function DataManagement(){const [syncing,setSyncing]=useState(false);const [dialog,setDialog]=useState<{title:string;desc:string}|null>(null);const rows=[['客户重复记录','27','建议合并'],['待匹配询盘','14','需要确认'],['异常渠道数据','2','正在重试'],['最近同步',syncing?'刚刚':'3 分钟前',syncing?'18 个数据源同步完成':'全部数据源']];return <div><div className="panel-title"><div><h2>数据质量</h2><p>数据源、字段映射、导入导出和保留策略</p></div><button onClick={()=>{setSyncing(true);setDialog({title:'数据同步完成',desc:'18 个数据源已完成增量同步，新增 36 条记录；2 条异常渠道数据仍在自动重试。'})}}>{syncing?'同步完成 ✓':'立即同步'}</button></div><div className="data-health"><div className="health-score"><b>96.8%</b><span>整体完整率</span></div>{rows.map(x=><button key={x[0]} onClick={()=>setDialog({title:x[0],desc:x[0]==='客户重复记录'?'发现 27 组疑似重复客户，可按邮箱、企业域名和电话核对后合并。':x[0]==='待匹配询盘'?'14 条询盘缺少明确客户归属，已按企业名称和域名生成候选匹配。':x[0]==='异常渠道数据'?'2 条渠道数据因字段格式异常正在重试，可查看原始记录并手动修正。':'最近一次同步覆盖全部 18 个数据源，可查看逐源耗时与增量记录。'})}><span>{x[0]}</span><b>{x[1]}</b><small>{x[2]}</small></button>)}</div>{dialog&&<ActionDialog title={dialog.title} desc={dialog.desc} confirm="查看详情" onClose={()=>setDialog(null)}/>}</div>}
+
+type GovernanceKey = 'data' | 'agent' | 'approval' | 'deployment' | 'partner' | 'audit';
+
+const governanceItems: Array<{key:GovernanceKey; icon:string; title:string; desc:string; metric:string; metricLabel:string; status:string; tone?:'warn'}> = [
+  {key:'data',icon:'数',title:'数据主权',desc:'管理数据位置、跨境、训练使用、保留周期与脱敏策略。',metric:'18',metricLabel:'个受管数据源',status:'策略已启用'},
+  {key:'agent',icon:'智',title:'Agent 权限',desc:'控制数字员工可读取的数据、可调用工具与可执行动作。',metric:'6',metricLabel:'位运行中',status:'1 项待检查',tone:'warn'},
+  {key:'approval',icon:'审',title:'审批策略',desc:'配置发布、报价、订单与预算调整等高风险动作边界。',metric:'9',metricLabel:'条审批流程',status:'全部生效'},
+  {key:'deployment',icon:'部',title:'部署与模型',desc:'管理云端、本地私有化、轻量边缘部署及模型运行位置。',metric:'3',metricLabel:'个运行节点',status:'运行正常'},
+  {key:'partner',icon:'协',title:'外部合作方',desc:'管理产业方、服务商、第三方应用与 API 的授权范围。',metric:'12',metricLabel:'项有效授权',status:'2 项即将到期',tone:'warn'},
+  {key:'audit',icon:'迹',title:'审计与合规',desc:'追溯数据访问、Agent 操作、人工审批与外部调用记录。',metric:'248',metricLabel:'条今日事件',status:'无高风险事件'},
+];
+
+function SecurityPage(){
+  const [active,setActive]=useState<GovernanceKey | null>(null);
+  return <div className="governance-center">
+    <div className="panel-title governance-title"><div><h2>企业治理中心</h2><p>集中管理企业数据、Agent、审批、部署、合作方与审计边界</p></div><span>6 个治理域</span></div>
+    <div className="governance-grid">{governanceItems.map(item=><button key={item.key} className={active===item.key?'governance-card active':'governance-card'} onClick={()=>setActive(item.key)}>
+      <span className="governance-icon">{item.icon}</span>
+      <span className="governance-copy"><span className="governance-card-head"><strong>{item.title}</strong><em className={item.tone}>{item.status}</em></span><small>{item.desc}</small></span>
+      <span className="governance-card-foot"><span><b>{item.metric}</b><small>{item.metricLabel}</small></span><span className="governance-enter">进入管理 <i>→</i></span></span>
+    </button>)}</div>
+  </div>
+}
 
 export default function Home() {
   const [view, setView] = useState<View>('home');
   const [showGlobalRuns, setShowGlobalRuns] = useState(false);
+  const [topDialog,setTopDialog]=useState<{title:string;desc:string}|null>(null);
   const go = (next: View) => setView(next);
   return <main className="app-shell">
     <aside className="sidebar">
@@ -443,28 +521,36 @@ export default function Home() {
       <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><span>···</span></div>
     </aside>
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher">切换组织⌄</button></div><div className="top-actions"><button className="search">搜索项目、内容或客户</button><button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 工作现场 <b>3</b></button><button className="agent-status">AI · 6 位运行中</button><button className="notice">3</button></div></header>
+      <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher" onClick={()=>setTopDialog({title:'切换组织',desc:'可切换至茶与食品事业部、轮胎事业部或跨部门项目团队。'})}>切换组织⌄</button></div><div className="top-actions"><button className="search" onClick={()=>setTopDialog({title:'全局搜索',desc:'可搜索经营项目、内容素材和客户，目前已索引 326 条业务记录。'})}>搜索项目、内容或客户</button><button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 进入生产现场 <b>8</b></button><button className="agent-status" onClick={()=>setTopDialog({title:'数字员工运行状态',desc:'6 位数字员工运行正常，今日完成 128 次自主动作，7 项等待审批。'})}>AI · 6 位运行中</button><button className="notice" onClick={()=>setTopDialog({title:'通知中心',desc:'3 条未读通知：2 项预算审批和 1 项账号授权即将到期。'})}>3</button></div></header>
       <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<CustomerOperationsPage go={go}/>:view==='customerLive'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<OrganizationPage view={view}/>}</div>
     </section>
     {showGlobalRuns && <GlobalAgentDesk onExit={()=>setShowGlobalRuns(false)}/>}
+    {topDialog&&<ActionDialog title={topDialog.title} desc={topDialog.desc} confirm="知道了" onClose={()=>setTopDialog(null)}/>}
   </main>;
 }
 
-type RunWindowState = { id: string; title: string; agent: string; kind: 'video'|'research'|'export'; progress: number; x: number; y: number; minimized: boolean; visible: boolean };
+type LiveCustomer = { id:string; customer:string; company:string; market:string; channel:string; agent:string; action:string; detail:string; next:string; score:number; elapsed:string; kind:'reply'|'qualify'|'followup'|'quote'; attention?:boolean };
+
+const liveCustomers:LiveCustomer[] = [
+  {id:'adrian',customer:'Adrian Tan',company:'Lumi Ingredients',market:'马来西亚',channel:'WhatsApp',agent:'询盘接待 Agent',action:'正在组织 500kg 报价回复',detail:'已识别规格书、样品与报价意图',next:'确认目标应用与交付周期',score:91,elapsed:'01:24',kind:'reply'},
+  {id:'aisyah',customer:'Nur Aisyah',company:'Maya Food Distribution',market:'马来西亚',channel:'邮件',agent:'资格判断 Agent',action:'正在评估独家代理资格',detail:'已补全渠道覆盖与首批采购量',next:'生成 BANT 评分与风险提示',score:86,elapsed:'03:08',kind:'qualify'},
+  {id:'daniel',customer:'Daniel Lim',company:'Pacific Beverage SG',market:'新加坡',channel:'LinkedIn',agent:'成交推进 Agent',action:'正在安排下周产品会议',detail:'已匹配产品经理与技术顾问时间',next:'发送议程与日历邀请',score:82,elapsed:'00:46',kind:'followup'},
+  {id:'hana',customer:'Siti Hana',company:'GreenCup Distribution',market:'马来西亚',channel:'WhatsApp',agent:'客户跟进 Agent',action:'正在跟进样品签收反馈',detail:'客户已签收 M-02 与 M-05 样品',next:'询问配方测试时间表',score:76,elapsed:'02:17',kind:'followup'},
+  {id:'omar',customer:'Omar Farooq',company:'Gulf Pantry Trading',market:'阿联酋',channel:'邮件',agent:'报价协同 Agent',action:'正在生成 CIF Dubai 报价',detail:'已核对 1.2 吨试订单与包装规格',next:'等待销售总监确认折扣',score:89,elapsed:'04:31',kind:'quote',attention:true},
+  {id:'mei',customer:'Mei Wong',company:'Nourish Lab HK',market:'中国香港',channel:'LinkedIn',agent:'需求洞察 Agent',action:'正在提取新品研发需求',detail:'关注低苦涩度、色泽与清洁标签',next:'匹配合适等级与应用案例',score:78,elapsed:'01:53',kind:'qualify'},
+  {id:'anong',customer:'Anong S.',company:'Siam Tea Works',market:'泰国',channel:'WhatsApp',agent:'客户记忆 Agent',action:'正在整理历史沟通与偏好',detail:'已合并 4 轮对话与 3 份文档',next:'向成交推进 Agent 交付摘要',score:73,elapsed:'00:58',kind:'followup'},
+  {id:'sarah',customer:'Sarah Collins',company:'Pure Origin Foods',market:'澳大利亚',channel:'邮件',agent:'询盘接待 Agent',action:'正在回复认证与溯源问题',detail:'已调用出口证书与批次质检记录',next:'附上证据并询问年度用量',score:84,elapsed:'02:42',kind:'reply'},
+];
 
 function GlobalAgentDesk({ onExit }: { onExit: () => void }) {
-  const [windows,setWindows] = useState<RunWindowState[]>([
-    {id:'video',title:'工厂品质 30 秒视频',agent:'内容生产 Agent',kind:'video',progress:52,x:38,y:88,minimized:false,visible:true},
-    {id:'research',title:'马来西亚采购信号研究',agent:'市场策略 Agent',kind:'research',progress:68,x:520,y:132,minimized:false,visible:true},
-    {id:'export',title:'高意向客户名单导出',agent:'数据运营 Agent',kind:'export',progress:81,x:860,y:72,minimized:false,visible:true},
-  ]);
-  const patchWindow=(id:string,patch:Partial<RunWindowState>)=>setWindows(items=>items.map(item=>item.id===id?{...item,...patch}:item));
-  const beginDrag=(event:React.PointerEvent,id:string)=>{if((event.target as HTMLElement).closest('button'))return;const item=windows.find(x=>x.id===id);if(!item)return;const startX=event.clientX,startY=event.clientY,originX=item.x,originY=item.y;const move=(e:PointerEvent)=>patchWindow(id,{x:Math.max(0,originX+e.clientX-startX),y:Math.max(58,originY+e.clientY-startY)});const end=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end)};window.addEventListener('pointermove',move);window.addEventListener('pointerup',end)};
-  return <div className="global-agent-desk"><header><div><span className="agent-spark">AI</span><p><strong>数字员工工作现场</strong><small>3 个任务正在运行 · 拖动窗口标题栏调整位置，拖动右下角调整大小</small></p></div><div><button>自动排列</button><button onClick={onExit}>退出现场</button></div></header><aside className="desk-dock">{windows.map(item=><button key={item.id} className={item.visible?'active':''} onClick={()=>patchWindow(item.id,{visible:true,minimized:false})}><span><i className={`run-kind ${item.kind}`}/>{item.agent}</span><strong>{item.progress}%</strong></button>)}</aside><main>{windows.filter(x=>x.visible).map(item=><section key={item.id} className={`floating-run-window ${item.minimized?'minimized':''}`} style={{left:item.x,top:item.y}}><header onPointerDown={e=>beginDrag(e,item.id)}><span className={`run-kind ${item.kind}`}/><p><strong>{item.title}</strong><small>{item.agent} · 运行中</small></p><em>{item.progress}%</em><button onClick={()=>patchWindow(item.id,{minimized:!item.minimized})}>{item.minimized?'□':'—'}</button><button onClick={()=>patchWindow(item.id,{visible:false})}>×</button></header>{!item.minimized&&<><div className="window-progress"><i><b style={{width:`${item.progress}%`}}/></i><span>{item.progress}%</span></div><RunMiniCanvas kind={item.kind}/><footer><span><i/> 实时更新</span><button>打开完整现场 →</button></footer></>}</section>)}</main></div>;
+  const [filter,setFilter] = useState<'all'|'attention'>('all');
+  const [compact,setCompact]=useState(false);
+  const [activeCustomer,setActiveCustomer]=useState<LiveCustomer|null>(null);
+  const shown = filter==='attention' ? liveCustomers.filter(item=>item.attention) : liveCustomers;
+  return <div className={`global-agent-desk ${compact?'compact-desk':''}`}><header><div><span className="agent-spark">AI</span><p><strong>客户转化生产现场</strong><small>实时查看 Agent 的客户跟进与销售推进过程</small></p></div><div><span className="desk-live-count"><i/> 8 个现场运行中</span><button onClick={()=>setCompact(v=>!v)}>{compact?'标准排列':'自动排列'}</button><button onClick={onExit}>退出现场</button></div></header><div className="desk-toolbar"><div><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>全部现场 <b>8</b></button><button className={filter==='attention'?'active attention':''} onClick={()=>setFilter('attention')}>需人工介入 <b>1</b></button></div><span>画面自动更新 · 最同步于刚刚</span></div><main><div className="live-customer-grid">{shown.map(item=><LiveCustomerScreen key={item.id} item={item} onOpen={()=>setActiveCustomer(item)}/>)}</div></main>{activeCustomer&&<ActionDialog title={`${activeCustomer.customer} · 完整现场`} desc={`${activeCustomer.agent}正在处理“${activeCustomer.action}”。下一步：${activeCustomer.next}。`} confirm="进入客户详情" onClose={()=>setActiveCustomer(null)}/>}</div>;
 }
 
-function RunMiniCanvas({ kind }: { kind: RunWindowState['kind'] }) {
-  if(kind==='research') return <div className="mini-research"><div className="mini-step"><span>已检索</span><b>46 个来源</b><small>政府、行业协会、采购平台</small></div><section><header><strong>正在提取采购信号</strong><span>18 / 26</span></header>{[['清真认证','高频要求','92'],['批次稳定性','采购关注','86'],['500kg 起订','渠道匹配','74']].map(x=><div key={x[0]}><span>{x[0]}</span><small>{x[1]}</small><i><b style={{width:`${x[2]}%`}}/></i></div>)}</section><p><i/> 正在分析马来西亚进口商的认证要求…</p></div>;
-  if(kind==='export') return <div className="mini-export"><div className="export-file"><span>CSV</span><p><strong>malaysia-qualified-leads.csv</strong><small>目标记录 312 条 · 8 个字段</small></p></div>{[['查询客户记录','312 / 312','done'],['检查字段权限','8 / 8','done'],['敏感字段脱敏','246 / 312','running'],['生成下载文件','等待','pending']].map(x=><div key={x[0]} className={x[2]}><i>{x[2]==='done'?'✓':'•'}</i><span>{x[0]}</span><b>{x[1]}</b></div>)}<p>手机号与私人邮箱正在按组织策略脱敏</p></div>;
-  return <div className="mini-video"><div className="mini-preview"><span>SCENE 3 / 6</span><i/><i/><i/><strong>自动化生产线</strong><small>Built for consistency at scale</small></div><div className="mini-scenes">{[1,2,3,4,5,6].map(i=><span key={i} className={i<3?'done':i===3?'active':''}>{i<3?'✓':i}</span>)}</div><p><i/> 正在生成第 3 个分镜画面…</p></div>;
+function LiveCustomerScreen({item,onOpen}:{item:LiveCustomer;onOpen:()=>void}) {
+  const steps = item.kind==='quote'?['需求确认','成本核算','报价审批','发送客户']:item.kind==='qualify'?['信息补全','需求判断','资格评分','转入商机']:['读取上下文','生成策略','执行跟进','记录结果'];
+  return <article className={`live-customer-screen ${item.attention?'needs-attention':''}`}><header><div className="customer-avatar">{item.customer.slice(0,1)}</div><p><strong>{item.customer}</strong><small>{item.company} · {item.market}</small></p><span className="screen-channel">{item.channel}</span></header><div className="screen-agent"><span className="agent-spark">AI</span><p><strong>{item.agent}</strong><small><i/> 正在操作 · {item.elapsed}</small></p><b>{item.score}</b></div><div className="screen-workspace"><div className="screen-action"><span>当前动作</span><strong>{item.action}</strong><small>{item.detail}</small></div><div className="screen-steps">{steps.map((step,index)=><div key={step} className={index<2?'done':index===2?'active':''}><i>{index<2?'✓':index+1}</i><span>{step}</span></div>)}</div><div className="screen-chat"><span className="customer-line">{item.kind==='quote'?'请提供含运费的正式报价和交付时间。':'我们想进一步了解产品规格与合作方式。'}</span><span className="agent-line">Agent 正在根据客户记忆与企业资料生成下一步回复…</span></div></div><footer><span><i/> 实时更新</span><p><small>下一步</small><strong>{item.next}</strong></p><button aria-label={`打开 ${item.customer} 的完整现场`} onClick={onOpen}>打开 →</button></footer></article>;
 }

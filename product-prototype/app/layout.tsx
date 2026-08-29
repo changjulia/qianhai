@@ -5,6 +5,7 @@ import './agent-entry.css';
 import './agent-desk.css';
 import './content-simple.css';
 import './schedule-simple.css';
+import './lingshu-live.css';
 
 export const metadata: Metadata = {
   title: '黔海 Global Growth OS',
