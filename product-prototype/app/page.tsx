@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { PlatformManagementPage, type PlatformView } from './components/platform-management';
+import { ConnectedGlobalSearch } from './components/connected-global-search';
+import { ConnectedOnboardingFlow } from './components/connected-onboarding-flow';
+import {
+  BusinessWorkflowProvider,
+  WorkflowStatusStrip,
+  useBusinessWorkflow,
+} from './components/business-workflow-provider';
 
 const recordAction=(action:string,description:string)=>fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,description})}).catch(()=>null);
 const appFeedback=(title:string,desc:string)=>{void recordAction(title,desc);window.dispatchEvent(new CustomEvent('qianhai-feedback',{detail:{title,desc}}));};
@@ -45,89 +52,6 @@ function ActionDialog({ title, desc, confirm='确认', onClose, onConfirm }: { t
   const [submitting,setSubmitting]=useState(false);
   const submit=async()=>{setSubmitting(true);await recordAction(`dialog.${confirm}`,`${title}：${note||desc}`);onConfirm?.();setSubmitting(false);onClose()};
   return <div className="action-dialog-backdrop" onMouseDown={onClose}><section className="action-dialog" onMouseDown={e=>e.stopPropagation()}><header><span>黔海工作台</span><button onClick={onClose}>×</button></header><h2>{title}</h2><p>{desc}</p><label>补充说明（可选）<textarea value={note} onChange={event=>setNote(event.target.value)} placeholder="输入处理说明，相关记录将写入行动账本"/></label><footer><button onClick={onClose}>取消</button><button disabled={submitting} className="primary" onClick={submit}>{submitting?'正在提交…':confirm}</button></footer></section></div>;
-}
-
-type OnboardingStage = 'auth' | 'setup' | null;
-type SetupData = { company:string; industry:string; product:string; market:string; autonomy:string };
-
-type OnboardingClaimResponse = {
-  shouldStartOnboarding?: boolean;
-  error?: { message?: string };
-};
-
-class OnboardingClaimError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-    this.name = 'OnboardingClaimError';
-  }
-}
-
-async function claimFirstLoginOnboarding(signal?: AbortSignal): Promise<boolean> {
-  const response = await fetch('/api/onboarding/first-login', {
-    method: 'POST',
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-  const payload = await response.json().catch(() => null) as OnboardingClaimResponse | null;
-  if (!response.ok) {
-    throw new OnboardingClaimError(response.status, payload?.error?.message ?? '新手任务状态确认失败');
-  }
-  if (typeof payload?.shouldStartOnboarding !== 'boolean') {
-    throw new OnboardingClaimError(502, '新手任务接口返回了无效结果');
-  }
-  return payload.shouldStartOnboarding;
-}
-
-function OnboardingFlow({stage,onStageChange,onComplete,onSkip,onAuthenticate}:{stage:OnboardingStage;onStageChange:(stage:OnboardingStage)=>void;onComplete:(data:SetupData)=>void;onSkip:()=>void;onAuthenticate:()=>Promise<boolean>}) {
-  const [authMode,setAuthMode]=useState<'register'|'login'>('register');
-  const [step,setStep]=useState(1);
-  const [data,setData]=useState<SetupData>({company:'贵州茶产业演示账号',industry:'贵州茶产业',product:'贵州茶',market:'马来西亚',autonomy:'审批后执行'});
-  const [authSubmitting,setAuthSubmitting]=useState(false);
-  const [authError,setAuthError]=useState('');
-  if(!stage)return null;
-  const update=(key:keyof SetupData,value:string)=>setData(current=>({...current,[key]:value}));
-  const finish=()=>onComplete(data);
-  const submitAuth=async(event:React.FormEvent<HTMLFormElement>)=>{
-    event.preventDefault();
-    setAuthSubmitting(true);
-    setAuthError('');
-    try {
-      const shouldStartOnboarding=await onAuthenticate();
-      if(shouldStartOnboarding){setStep(1);onStageChange('setup')}
-      else onSkip();
-    } catch(error) {
-      setAuthError(error instanceof Error?error.message:'登录状态确认失败，请稍后重试');
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-  return <div className="onboarding-backdrop" role="presentation">
-    <section className={`onboarding-card ${stage==='setup'?'setup-card':''}`} role="dialog" aria-modal="true" aria-label={stage==='auth'?'登录或注册':'首次使用引导'}>
-      <div className="onboarding-brand"><span>黔</span><p><strong>黔海</strong><small>Global Growth OS</small></p></div>
-      {stage==='auth'?<>
-        <div className="auth-welcome"><span className="onboarding-kicker">企业出海增长工作台</span><h1>{authMode==='register'?'创建你的黔海账号':'欢迎回来'}</h1><p>{authMode==='register'?'用 3 步建立第一个出海经营任务。':'登录后继续管理你的经营任务。'}</p></div>
-        <div className="auth-tabs" role="tablist"><button className={authMode==='register'?'active':''} onClick={()=>{setAuthMode('register');setAuthError('')}}>注册</button><button className={authMode==='login'?'active':''} onClick={()=>{setAuthMode('login');setAuthError('')}}>登录</button></div>
-        <form className="auth-form" onSubmit={submitAuth}>
-          {authMode==='register'&&<label><span>姓名</span><input required defaultValue="陈雨晴" placeholder="请输入姓名" autoComplete="name"/></label>}
-          <label><span>工作邮箱</span><input required type="email" defaultValue="chen@qianshan-global.cn" placeholder="name@company.com" autoComplete="email"/></label>
-          <label><span>密码</span><input required type="password" defaultValue="qianhai2026" minLength={8} autoComplete={authMode==='register'?'new-password':'current-password'}/></label>
-          {authError&&<p className="auth-error" role="alert">{authError}</p>}
-          <button className="onboarding-primary" type="submit" disabled={authSubmitting}>{authSubmitting?'正在确认账号…':authMode==='register'?'注册并开始配置':'登录'} {!authSubmitting&&<b>→</b>}</button>
-        </form>
-        <div className="auth-trust"><span>✓ 企业数据隔离</span><span>✓ 全程行动留痕</span><span>✓ 关键操作需审批</span></div>
-        <button className="onboarding-skip" onClick={onSkip}>先看看演示工作台</button>
-      </>:<>
-        <header className="setup-head"><div><span className="onboarding-kicker">首次使用引导</span><h1>{step===1?'先让我们了解你的企业':step===2?'建立第一个出海目标':'设定数字员工的边界'}</h1><p>{step===1?'这些信息会帮助 AI 理解你的业务。':step===2?'我们将据此生成首个经营任务。':'你可以随时在权限管理中调整。'}</p></div><button className="setup-close" onClick={onSkip} aria-label="跳过引导">×</button></header>
-        <div className="setup-progress">{[1,2,3].map(item=><div key={item} className={item===step?'active':item<step?'done':''}><i>{item<step?'✓':item}</i><span>{item===1?'企业信息':item===2?'产品与市场':'执行权限'}</span></div>)}</div>
-        <div className="setup-body">
-          {step===1&&<div className="setup-fields"><label><span>企业名称</span><input value={data.company} onChange={e=>update('company',e.target.value)}/></label><label><span>所属产业</span><input value="贵州茶产业" readOnly aria-readonly="true"/></label><aside><b>AI</b><p><strong>当前账号范围</strong><small>仅用于贵州茶行业的市场、采购角色和合规匹配。</small></p></aside></div>}
-          {step===2&&<div className="setup-fields"><label><span>首个出海产品</span><input value={data.product} onChange={e=>update('product',e.target.value)}/></label><label><span>优先目标市场</span><select value={data.market} onChange={e=>update('market',e.target.value)}><option>马来西亚</option><option>新加坡</option><option>泰国</option><option>阿联酋</option><option>欧盟</option></select></label><div className="setup-preview"><span>将为你生成</span><strong>{data.product} · {data.market}市场获客任务</strong><small>包含市场策略、内容计划、分发节奏与询盘承接。</small></div></div>}
-          {step===3&&<div className="autonomy-options">{[['建议模式','AI 只生成建议，所有动作由人工执行'],['审批后执行','AI 完成草案，经你确认后对外执行'],['边界内自主','低风险动作自动执行，重要事项仍需审批']].map((option,index)=><button key={option[0]} className={data.autonomy===option[0]?'active':''} onClick={()=>update('autonomy',option[0])}><i>{index===0?'○':index===1?'✓':'✦'}</i><span><strong>{option[0]}{index===1&&<em>推荐</em>}</strong><small>{option[1]}</small></span><b>{data.autonomy===option[0]?'●':'○'}</b></button>)}<p className="permission-note">价格、交期、认证与独家合作默认始终需要人工确认。</p></div>}
-        </div>
-        <footer className="setup-actions"><button className="onboarding-skip" onClick={onSkip}>稍后再说</button><div>{step>1&&<button className="onboarding-secondary" onClick={()=>setStep(current=>current-1)}>上一步</button>}<button className="onboarding-primary" disabled={(step===1&&!data.company)||(step===2&&!data.product)} onClick={()=>step<3?setStep(current=>current+1):finish()}>{step===3?'创建第一个经营任务':'继续'} <b>→</b></button></div></footer>
-      </>}
-    </section>
-  </div>;
 }
 
 function AgentNote({ agent, children, action = '查看建议', onAction }: { agent: string; children: React.ReactNode; action?: string; onAction?: () => void }) {
@@ -905,14 +829,92 @@ function SecurityPage(){
   </div>
 }
 
+const workflowViews = new Set<View>([
+  'home', 'projects', 'approvals', 'content', 'schedule', 'distribution', 'traffic',
+  'inquiries', 'workbench', 'customerLive', 'customers', 'revenue',
+]);
+
+function BusinessWorkflowConsole({view,onNavigate}:{view:View;onNavigate:(next:View)=>void}) {
+  const {state,actions}=useBusinessWorkflow();
+  const [submitting,setSubmitting]=useState(false);
+  let label='刷新后端证据';
+  let description='全部演示资源已创建，重新从后端核对本次 run 的数量和状态。';
+  let nextView:View=view;
+  let run=()=>actions.refresh();
+
+  if(!state.ids.taskId){
+    label='创建真实经营任务'; description='写入一条贵州茶客户试用任务；名称、预算和目标均为 Demo 测试值。'; nextView='projects';
+    run=()=>actions.createTask({name:'贵州茶 · 马来西亚客户试用联调任务',targetMarket:'MY',budgetCny:12000,productIds:['prd-m02'],targetSegments:['food_importer']});
+  }else if(!state.ids.contentId){
+    label='生成并保存内容草案'; description='把英文规格说明草案写入后端，不会发布到任何外部平台。'; nextView='content';
+    run=()=>actions.createContent({title:'贵州饮品级抹茶 M-02 买家规格说明 Demo',language:'en',channel:'LinkedIn',body:'Demo draft for a Malaysia food-ingredient buyer. Product claims require human verification.',cta:'Request a verified specification sheet'});
+  }else if(!state.ids.scheduleId){
+    label='创建内容排期'; description='保存一个未来排期记录；这不是已发布状态。'; nextView='schedule';
+    run=()=>actions.scheduleContent({channel:'LinkedIn',scheduledAt:'2030-09-05T04:30:00.000Z'});
+  }else if(!state.ids.campaignId){
+    label='创建 Campaign 草案'; description='只创建活动草案；真实广告投放和账号同步尚未启用。'; nextView='traffic';
+    run=()=>actions.createCampaign({name:'贵州茶马来西亚客户试用 Campaign Demo',market:'MY',budgetCny:3000});
+  }else if(!state.ids.inquiryId){
+    label='创建演示客户与询盘'; description='写入 Mock 买家和询盘，用于验证承接链路，不代表真实客户。'; nextView='inquiries';
+    run=()=>actions.createCustomerAndInquiry({displayName:'客户试用演示买家',market:'MY',companyType:'food_importer',contactRole:'procurement',sourceChannel:'LinkedIn',interestedProductIds:['prd-m02']},{channel:'WhatsApp',body:'Demo inquiry: please provide a verified specification and sample terms.'});
+  }else if(!state.ids.quoteId){
+    label='创建报价草案'; description='保存一份 Demo 报价；未审批前不能创建订单。'; nextView='workbench';
+    run=()=>actions.createQuote({currency:'CNY',items:[{productId:'prd-m02',quantity:500,unitPrice:180}],validDays:14});
+  }else if(!state.ids.approvalId){
+    label='发起报价审批'; description='将报价置为待审批，等待人工明确决定。'; nextView='approvals';
+    run=()=>actions.requestApproval({reason:'客户试用联调：Demo 报价需人工确认'});
+  }else if(state.statuses.approval==='pending'){
+    label='人工批准 Demo 报价'; description='本按钮代表客户试用中的人工批准动作，并写入审批记录。'; nextView='approvals';
+    run=()=>actions.decideApproval({decision:'approved',note:'客户试用联调：人工确认 Demo 报价'});
+  }else if(state.statuses.approval!=='approved'){
+    label='刷新审批状态'; description=state.statuses.approval==='rejected'?'该报价已被拒绝；请保留证据并使用新的测试 run 重新联调。':'先从后端确认审批状态，再决定是否创建订单。'; nextView='approvals';
+    run=()=>actions.refresh();
+  }else if(!state.ids.orderId){
+    label='创建 Demo 成交订单'; description='审批通过后写入 won 演示订单；不代表真实合同或收入。'; nextView='workbench';
+    run=()=>actions.createOrder({status:'won'});
+  }else if(!state.ids.attributionId){
+    label='记录收入归因证据'; description='把任务、内容、Campaign、客户和 Demo 订单串成可追溯链。'; nextView='revenue';
+    run=()=>actions.recordAttribution();
+  }
+
+  const execute=async()=>{
+    setSubmitting(true);
+    try{
+      await run();
+      appFeedback('真实后端步骤已完成',`${label}已由服务端返回成功，当前页面只把 Demo 数据用于技术验收。`);
+      onNavigate(nextView);
+    }catch(error){
+      appFeedback('联调步骤未完成',error instanceof Error?error.message:'后端请求失败，请检查服务状态。');
+    }finally{setSubmitting(false)}
+  };
+  const refreshEvidence=async()=>{
+    setSubmitting(true);
+    try{await actions.refresh();appFeedback('后端证据已刷新','当前 run 的数量与状态已从服务端重新读取。')}
+    catch(error){appFeedback('后端证据刷新失败',error instanceof Error?error.message:'请检查登录状态与服务连接。')}
+    finally{setSubmitting(false)}
+  };
+
+  return <section className="panel" style={{marginBottom:16,borderColor:'#9fb7d5'}}>
+    <div className="panel-title"><div><h2>客户试用 · 真实后端联调链</h2><p>资源和状态真实写库；企业、客户、预算、报价与收入数值均为 Demo。外部发布、广告投放和 CRM 同步未启用。</p></div><div className="header-actions"><button disabled={!state.hydrated||Boolean(state.pending)||submitting} onClick={()=>void refreshEvidence()}>刷新后端证据</button><button className="primary" disabled={!state.hydrated||Boolean(state.pending)||submitting||state.statuses.approval==='rejected'} onClick={()=>void execute()}>{submitting||state.pending?'处理中…':label}</button></div></div>
+    <p><strong>当前建议：</strong>{description}</p>
+    <details><summary>展开本次 run 的 ID、状态与后端计数</summary><div style={{marginTop:12}}><WorkflowStatusStrip/></div></details>
+  </section>;
+}
+
 export default function Home() {
+  return <BusinessWorkflowProvider><HomeShell/></BusinessWorkflowProvider>;
+}
+
+function HomeShell() {
+  const {actions:workflowActions}=useBusinessWorkflow();
   const [view, setView] = useState<View>('home');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workbenchTarget, setWorkbenchTarget] = useState<{tab:WorkbenchTab;filter?:string;customerId?:string}>({tab:'待处理',filter:'全部'});
   const [showGlobalRuns, setShowGlobalRuns] = useState(false);
   const [topDialog,setTopDialog]=useState<{title:string;desc:string}|null>(null);
-  const [onboardingStage,setOnboardingStage]=useState<OnboardingStage>(null);
-  const initialOnboardingClaim=useRef<Promise<boolean>|null>(null);
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [onboardingReplaySignal,setOnboardingReplaySignal]=useState(0);
+  const [canReplayOnboarding,setCanReplayOnboarding]=useState(false);
   useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{title:string;desc:string}>).detail;setTopDialog(detail)};window.addEventListener('qianhai-feedback',handler);return()=>window.removeEventListener('qianhai-feedback',handler)},[]);
   useEffect(() => {
     const syncViewFromHash = () => {
@@ -927,22 +929,10 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
-    let active = true;
     const frame = window.requestAnimationFrame(() => {
       setSidebarCollapsed(window.localStorage.getItem('qianhai-sidebar-collapsed') === 'true');
-      initialOnboardingClaim.current ??= claimFirstLoginOnboarding();
-      void initialOnboardingClaim.current
-        .then(shouldStartOnboarding=>{if(active&&shouldStartOnboarding)setOnboardingStage('setup')})
-        .catch(error=>{
-          if(!active)return;
-          if(error instanceof OnboardingClaimError&&error.status===401){setOnboardingStage('auth');return}
-          setTopDialog({title:'暂时无法确认新手任务',desc:'账号状态未被改写，请刷新后重试。系统不会因此重复发放新手任务。'});
-        });
     });
-    return () => {
-      active = false;
-      window.cancelAnimationFrame(frame);
-    };
+    return () => window.cancelAnimationFrame(frame);
   }, []);
   const toggleSidebar = () => {
     setSidebarCollapsed(current => {
@@ -951,13 +941,21 @@ export default function Home() {
       return next;
     });
   };
-  const closeOnboarding=(destination:View='home')=>{
-    setOnboardingStage(null);
-    setView(destination);
-  };
   const go = (next: View) => {
     setView(next);
     window.history.replaceState(null, '', `#${next}`);
+  };
+  const handleOnboardingComplete:ComponentProps<typeof ConnectedOnboardingFlow>['onComplete']=(result)=>{
+    setCanReplayOnboarding(false);
+    void workflowActions.attachOnboardingTask(result.task,{runId:`onboarding-${result.task.id}`})
+      .then(()=>{
+        go('projects');
+        appFeedback(result.replayed?'首个经营任务已接回':'首个经营任务已创建',`${result.task.name} · 服务端任务 ID：${result.task.id}`);
+      })
+      .catch(error=>{
+        go('projects');
+        appFeedback('任务已创建，但浏览器链路未接入',error instanceof Error?error.message:'请刷新后端状态后重试。');
+      });
   };
   const openWorkbench = (target: CustomerWorkspaceTarget) => {
     const tab: WorkbenchTab = target.tab === 'customers' ? '客户' : target.tab === 'opportunities' ? '商机' : '待处理';
@@ -998,16 +996,17 @@ export default function Home() {
         <p className="nav-section">平台管理</p>
         {([['knowledge','企业知识库','knowledge'],['structure','组织架构','org'],['permissions','权限管理','permission'],['data','数据管理','data'],['security','系统与安全','security']] as [View,string,NavIconName][]).map(x=><button aria-label={x[1]} key={x[0]} className={view===x[0]?'nav-item active':'nav-item'} onClick={()=>go(x[0])}><NavIcon name={x[2]}/><span>{x[1]}</span></button>)}
       </nav>
-      <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><button className="onboarding-replay" title="重新打开新手引导" aria-label="重新打开新手引导" onClick={()=>setOnboardingStage('setup')}>？</button></div>
+      <div className="sidebar-footer"><div className="avatar">试</div><div><strong>客户试用账号</strong><small>单客户独立演示库</small></div>{canReplayOnboarding&&<button className="onboarding-replay" title="继续未完成的新手引导" aria-label="继续未完成的新手引导" onClick={()=>setOnboardingReplaySignal(current=>current+1)}>？</button>}</div>
     </aside>
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">贵州茶产业工作区</span></div><div className="top-actions"><button className="search" onClick={()=>setTopDialog({title:'全局搜索',desc:'可搜索贵州茶经营项目、内容素材和客户，目前已索引 326 条业务记录。'})}>搜索项目、内容或客户</button>{canEnterProduction&&<button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 进入生产现场 <b>8</b></button>}{!['inquiries','workbench','revenue'].includes(view)&&<><button className="agent-status" onClick={()=>setTopDialog({title:'数字员工运行状态',desc:'6 位数字员工运行正常，今日完成 128 次自主动作，7 项等待审批。'})}>AI · 6 位运行中</button><button className="notice" onClick={()=>setTopDialog({title:'通知中心',desc:'3 条未读通知：2 项预算审批和 1 项账号授权即将到期。'})}>3</button></>}</div></header>
-      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage go={go}/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<CustomerOperationsOverview onOpenWorkspace={openWorkbench} onOpenRevenueAnalysis={()=>go('revenue')}/>:view==='workbench'?<CustomerWorkbenchPage key={`${workbenchTarget.tab}-${workbenchTarget.filter}-${workbenchTarget.customerId}`} initialTab={workbenchTarget.tab} initialFilter={workbenchTarget.filter} initialCustomerId={workbenchTarget.customerId} onBack={()=>go('inquiries')}/>:view==='customerLive'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenueAnalysisPage onOpenWorkbench={openCustomerInWorkbench}/>:view==='knowledge'?<EnterpriseKnowledgePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
+      <header className="topbar"><div><span className="crumb">贵州茶产业工作区 · Demo 数据</span></div><div className="top-actions"><button className="search" onClick={()=>setSearchOpen(true)}>检查全局搜索能力</button>{canEnterProduction&&<button className="global-live-button" onClick={()=>setShowGlobalRuns(true)}><i/> 查看演示现场 <b>Demo</b></button>}{!['inquiries','workbench','revenue'].includes(view)&&<><button className="agent-status" onClick={()=>setTopDialog({title:'数字员工演示状态',desc:'页面中的人数、动作数和待审批数是场景样例；本次真实写库结果请以“客户试用 · 真实后端联调链”为准。'})}>AI · Demo 状态</button><button className="notice" onClick={()=>setTopDialog({title:'演示通知中心',desc:'通知数量为贵州茶试用场景数据，不代表真实客户待办。'})}>Demo</button></>}</div></header>
+      <div className="page">{workflowViews.has(view)&&<BusinessWorkflowConsole view={view} onNavigate={go}/>} {view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage go={go}/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<CustomerOperationsOverview onOpenWorkspace={openWorkbench} onOpenRevenueAnalysis={()=>go('revenue')}/>:view==='workbench'?<CustomerWorkbenchPage key={`${workbenchTarget.tab}-${workbenchTarget.filter}-${workbenchTarget.customerId}`} initialTab={workbenchTarget.tab} initialFilter={workbenchTarget.filter} initialCustomerId={workbenchTarget.customerId} onBack={()=>go('inquiries')}/>:view==='customerLive'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenueAnalysisPage onOpenWorkbench={openCustomerInWorkbench}/>:view==='knowledge'?<EnterpriseKnowledgePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
     </section>
     {showGlobalRuns && canEnterProduction && <GlobalAgentDesk onExit={()=>setShowGlobalRuns(false)}/>}
     {topDialog&&<ActionDialog title={topDialog.title} desc={topDialog.desc} confirm="知道了" onClose={()=>setTopDialog(null)}/>}
+    <ConnectedGlobalSearch open={searchOpen} onClose={()=>setSearchOpen(false)}/>
     <QianXiaohai view={view} onNavigate={go}/>
-    <OnboardingFlow stage={onboardingStage} onStageChange={setOnboardingStage} onAuthenticate={()=>claimFirstLoginOnboarding()} onSkip={()=>closeOnboarding('home')} onComplete={data=>{closeOnboarding('projects');window.dispatchEvent(new CustomEvent('qianhai-feedback',{detail:{title:'首个经营任务已创建',desc:`${data.product} · ${data.market}市场获客任务已就绪，数字员工将按“${data.autonomy}”运行。`}}))}}/>
+    <ConnectedOnboardingFlow reopenSignal={onboardingReplaySignal} onStateChange={state=>setCanReplayOnboarding(state.status==='issued'||state.status==='in_progress')} onComplete={handleOnboardingComplete} onSkip={()=>{setCanReplayOnboarding(false);go('home');appFeedback('已跳过首次配置','系统已保存跳过状态，不会创建经营任务。')}}/>
   </main>;
 }
 

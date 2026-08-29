@@ -9,6 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
+    "start:trial": "node scripts/start-customer-trial.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-backend --ignore-pattern .next",
     "build:backend": "vite build --config vite.backend.config.ts",
     "start:backend": "node dist-backend/server.mjs",

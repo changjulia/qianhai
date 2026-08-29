@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const backendEntry = resolve(projectRoot, process.env.BACKEND_ENTRY?.trim() || 'dist-backend/server.mjs');
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'qianhai-backend-http-'));
 const databasePath = join(temporaryDirectory, 'e2e.sqlite');
 const port = 33_000 + Math.floor(Math.random() * 5_000);
@@ -566,7 +567,7 @@ function sumCounts(counts) {
 }
 
 async function startServer(overrides = {}) {
-  server = spawn(process.execPath, ['dist-backend/server.mjs'], {
+  server = spawn(process.execPath, [backendEntry], {
     cwd: projectRoot,
     windowsHide: true,
     env: {
