@@ -252,6 +252,11 @@ function Attribution(){return <div className="attribution"><div><span>首次触�
 
 export default function Home() {
   const [view, setView] = useState<View>('home');
+  const [organization, setOrganization] = useState('黔山国际产业集团');
+  const [topPanel, setTopPanel] = useState<'organization' | 'search' | 'agents' | 'notifications' | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [unread, setUnread] = useState(3);
+  const [pausedAgents, setPausedAgents] = useState<string[]>([]);
   useEffect(() => {
     const syncFromHash = () => {
       const hashView = window.location.hash.slice(1) as View;
@@ -261,10 +266,23 @@ export default function Home() {
     window.addEventListener('hashchange', syncFromHash);
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, []);
+  useEffect(() => {
+    if (!topPanel) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTopPanel(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [topPanel]);
   const go = (next: View) => {
     setView(next);
     window.history.replaceState(null, '', `#${next}`);
+    setTopPanel(null);
   };
+  const toggleTopPanel = (panel: NonNullable<typeof topPanel>) => setTopPanel(current => current === panel ? null : panel);
+  const runtimeAgents = [['内容生产 Agent','正在生成英文规格页'],['渠道分发 Agent','正在同步 LinkedIn'],['询盘接待 Agent','正在整理 4 条询盘'],['客户经营 Agent','正在更新跟进任务'],['收入归因 Agent','正在校验订单归因'],['数据治理 Agent','正在检查字段质量']];
+  const searchItems: Array<[string,string,View]> = [['组织架构','配置集团、事业部与协作边界','structure'],['角色与数据权限','管理成员和数字员工权限','permissions'],['系统连接','接入 ERP、CRM 与渠道平台','data'],['AI 安全策略','设置模型、数据与审批边界','security'],['Lumi Ingredients','客户档案与成交记录','customers'],['马来西亚市场拓展','经营任务与目标进度','projects']];
+  const visibleSearchItems = searchItems.filter(item => `${item[0]}${item[1]}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-logo">黔</span><div><strong>黔海</strong><small>Global Growth OS</small></div></div>
@@ -286,7 +304,15 @@ export default function Home() {
       <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><span>···</span></div>
     </aside>
     <section className="workspace">
-      <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher">切换组织⌄</button></div><div className="top-actions"><button className="search">搜索项目、内容或客户</button><button className="agent-status">AI · 6 位运行中</button><button className="notice">3</button></div></header>
+      <header className="topbar">
+        <div className="organization-trigger"><span className="crumb">{organization}</span><button type="button" className={topPanel==='organization'?'switcher active':'switcher'} aria-expanded={topPanel==='organization'} aria-controls="organization-panel" onClick={() => toggleTopPanel('organization')}>切换组织⌄</button></div>
+        <div className="top-actions"><button type="button" className={topPanel==='search'?'search active':'search'} aria-label="打开全局搜索" aria-expanded={topPanel==='search'} aria-controls="global-search-panel" onClick={() => toggleTopPanel('search')}><span aria-hidden="true">⌕</span> 搜索项目、内容或客户</button><button type="button" className={topPanel==='agents'?'agent-status active':'agent-status'} aria-expanded={topPanel==='agents'} aria-controls="agent-status-panel" onClick={() => toggleTopPanel('agents')}><i aria-hidden="true"/>AI · {6-pausedAgents.length} 位运行中</button><button type="button" className={topPanel==='notifications'?'notice active':'notice'} aria-label={`${unread} 条未读通知`} aria-expanded={topPanel==='notifications'} aria-controls="notification-panel" onClick={() => toggleTopPanel('notifications')}><span aria-hidden="true">通</span>{unread > 0 && <b>{unread}</b>}</button></div>
+        {topPanel && <button className="topbar-backdrop" aria-label="关闭顶部面板" onClick={() => setTopPanel(null)}/>}
+        {topPanel==='organization' && <section id="organization-panel" className="topbar-popover org-switch-popover" aria-label="组织切换"><header><strong>切换组织</strong><small>决定页面默认数据范围</small></header>{['黔山国际产业集团','茶与食品事业部','国际增长中心','黔绿方舟品牌'].map(item=><button type="button" key={item} className={organization===item?'selected':''} onClick={()=>{setOrganization(item);setTopPanel(null);}}><span>{item.slice(0,1)}</span><div><strong>{item}</strong><small>{item===organization?'当前组织':'点击切换数据范围'}</small></div><em>{item===organization?'✓':'›'}</em></button>)}</section>}
+        {topPanel==='search' && <section id="global-search-panel" className="topbar-popover global-search-popover" aria-label="全局搜索"><label><span aria-hidden="true">⌕</span><input autoFocus aria-label="搜索项目、客户或平台配置" value={searchQuery} onChange={event=>setSearchQuery(event.target.value)} placeholder="搜索项目、客户或平台配置…"/>{searchQuery && <button type="button" aria-label="清空搜索" onClick={()=>setSearchQuery('')}>×</button>}</label><div>{visibleSearchItems.map(item=><button type="button" key={item[0]} onClick={()=>go(item[2])}><span>{item[0]}</span><small>{item[1]}</small><em>打开 →</em></button>)}{visibleSearchItems.length===0&&<p>没有找到匹配内容，请尝试“权限”或“客户”。</p>}</div></section>}
+        {topPanel==='agents' && <section id="agent-status-panel" className="topbar-popover agent-popover" aria-label="数字员工运行状态"><header><strong>数字员工运行状态</strong><small>可在 Demo 中暂停和恢复</small></header>{runtimeAgents.map(agent=>{const paused=pausedAgents.includes(agent[0]);return <div className="agent-runtime-row" key={agent[0]}><i className={paused?'paused':''}/><span><strong>{agent[0]}</strong><small>{paused?'已暂停':agent[1]}</small></span><button type="button" onClick={()=>setPausedAgents(current=>paused?current.filter(name=>name!==agent[0]):[...current,agent[0]])}>{paused?'恢复':'暂停'}</button></div>})}<footer><button type="button" onClick={()=>go('agents')}>打开数字员工中心 →</button></footer></section>}
+        {topPanel==='notifications' && <section id="notification-panel" className="topbar-popover notification-popover" aria-label="通知与异常"><header><span><strong>通知与异常</strong><small>{unread > 0 ? `${unread} 条待处理` : '已全部阅读'}</small></span><button type="button" disabled={unread===0} onClick={()=>setUnread(0)}>全部标为已读</button></header>{[['Meta 授权将在 3 天后过期','账号连接','permissions'],['2 条渠道数据同步异常','数据管理','data'],['1 个预算申请等待审批','审批与异常','approvals']].map((item,index)=><button type="button" key={item[0]} onClick={()=>{setUnread(current=>Math.max(0,current-1));go(item[2] as View)}}><i className={index===0?'warn':''}/><span><strong>{item[0]}</strong><small>{item[1]} · {index+8}:2{index}</small></span><em>›</em></button>)}</section>}
+      </header>
       <div className="page" data-view={view}>{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
     </section>
   </main>;

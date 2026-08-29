@@ -59,12 +59,39 @@ const results = await evaluate(`(async () => {
     if (confirm) { confirm.click(); await sleep(180); }
   };
 
+  button('切换组织')?.click(); await sleep(120);
+  assert('顶部组织选择器', Boolean(document.querySelector('.org-switch-popover')));
+  [...document.querySelectorAll('.org-switch-popover button')].find(item => item.textContent.includes('国际增长中心'))?.click(); await sleep(120);
+  assert('组织切换生效', document.querySelector('.crumb')?.textContent.includes('国际增长中心'));
+
+  document.querySelector('.top-actions .search')?.click(); await sleep(120);
+  const searchInput = document.querySelector('.global-search-popover input');
+  if (searchInput) { searchInput.value = '权限'; searchInput.dispatchEvent(new Event('input', { bubbles: true })); }
+  await sleep(120);
+  assert('顶部全局搜索', Boolean(document.querySelector('.global-search-popover')) && document.querySelectorAll('.global-search-popover>div>button').length > 0);
+  document.querySelector('.topbar-backdrop')?.click(); await sleep(100);
+
+  document.querySelector('.top-actions .agent-status')?.click(); await sleep(120);
+  const pause = document.querySelector('.agent-runtime-row button');
+  const pauseBefore = pause?.textContent;
+  pause?.click(); await sleep(120);
+  assert('AI 状态独立面板', Boolean(document.querySelector('.agent-popover')) && pause?.textContent !== pauseBefore);
+  document.querySelector('.topbar-backdrop')?.click(); await sleep(100);
+
+  document.querySelector('.top-actions .notice')?.click(); await sleep(120);
+  assert('通知独立面板', Boolean(document.querySelector('.notification-popover')));
+  document.querySelector('.topbar-backdrop')?.click(); await sleep(100);
+
   await go('structure');
   assert('组织架构路由', document.querySelector('.page')?.dataset.view === 'structure');
   button('协作边界')?.click(); await sleep(180);
   assert('组织子标签切换', button('协作边界')?.classList.contains('active'));
   document.querySelector('.platform-table .platform-row:not(.head)')?.click(); await sleep(180);
-  assert('组织详情弹窗', Boolean(document.querySelector('.demo-dialog')));
+  assert('协作边界使用权限抽屉', Boolean(document.querySelector('.demo-dialog.demo-permission.demo-drawer')));
+  const permissionSwitch = document.querySelector('.permission-switches button[role="switch"]');
+  const permissionBefore = permissionSwitch?.getAttribute('aria-checked');
+  permissionSwitch?.click(); await sleep(100);
+  assert('权限开关可交互', permissionSwitch?.getAttribute('aria-checked') !== permissionBefore);
   await closeDialog();
   assert('保存反馈提示', Boolean(document.querySelector('.demo-toast')));
 
@@ -73,13 +100,20 @@ const results = await evaluate(`(async () => {
   button('账号连接')?.click(); await sleep(180);
   assert('账号子页切换', Boolean(document.querySelector('.enhanced-accounts')));
   document.querySelector('.enhanced-accounts button')?.click(); await sleep(180);
-  assert('账号管理弹窗', Boolean(document.querySelector('.demo-dialog')));
+  assert('账号使用三步连接向导', Boolean(document.querySelector('.demo-dialog.demo-connection')) && document.querySelectorAll('.demo-steps span').length === 3);
+  document.querySelector('.connection-methods button')?.click(); await sleep(120);
+  document.querySelector('.demo-dialog footer .primary')?.click(); await sleep(120);
+  assert('连接向导进入测试步骤', Boolean(document.querySelector('.connection-test')));
+  document.querySelector('.demo-dialog footer .primary')?.click(); await sleep(120);
+  assert('连接向导进入同步范围', Boolean(document.querySelector('.sync-scope')));
   await closeDialog();
 
   await go('data');
   button('数据质量')?.click(); await sleep(180);
   document.querySelector('.quality-cards button')?.click(); await sleep(180);
-  assert('数据质量处理弹窗', Boolean(document.querySelector('.demo-dialog')));
+  assert('数据质量专用处理台', Boolean(document.querySelector('.demo-dialog.demo-quality .quality-workbench')));
+  document.querySelector('.issue-actions button')?.click(); await sleep(100);
+  assert('数据质量处理动作可选择', Boolean(document.querySelector('.issue-actions button.selected')));
   await closeDialog();
 
   await go('security');
@@ -88,7 +122,18 @@ const results = await evaluate(`(async () => {
   assert('部署方案选中态', deployment?.getAttribute('aria-pressed') === 'true');
   button('AI 安全')?.click(); await sleep(180);
   document.querySelector('.ai-policy-list button')?.click(); await sleep(180);
-  assert('AI 策略弹窗', Boolean(document.querySelector('.demo-dialog')));
+  assert('AI 策略使用安全配置界面', Boolean(document.querySelector('.demo-dialog.demo-security .security-policy-editor')));
+  const securitySwitch = document.querySelector('.security-policy-editor button[role="switch"]');
+  const securityBefore = securitySwitch?.getAttribute('aria-checked');
+  securitySwitch?.click(); await sleep(100);
+  assert('安全策略开关可交互', securitySwitch?.getAttribute('aria-checked') !== securityBefore);
+  await closeDialog();
+
+  button('审计与告警')?.click(); await sleep(180);
+  document.querySelector('.audit-table .platform-row:not(.head)')?.click(); await sleep(180);
+  assert('审计事件使用处置时间线', Boolean(document.querySelector('.demo-dialog.demo-audit .event-timeline')));
+  document.querySelector('.disposition-actions button')?.click(); await sleep(100);
+  assert('审计处置动作可选择', Boolean(document.querySelector('.disposition-actions button.selected')));
   await closeDialog();
 
   const heading = document.querySelector('.page-heading')?.getBoundingClientRect();
