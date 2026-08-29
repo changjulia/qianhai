@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { PlatformManagementPage, type PlatformView } from './components/platform-management';
 import { Metric, PageHeader, Tabs } from './components/shared-ui';
+import HomeGlobeShowcase from './components/home-globe-showcase';
 
 type View = 'home' | 'projects' | 'agents' | 'approvals' | 'content' | 'schedule' | 'distribution' | 'traffic' | 'inquiries' | 'customers' | 'revenue' | 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
 type SourceView = '全部' | '人员创建' | '数字员工执行' | '待我处理';
@@ -39,25 +40,9 @@ function HomePage({ go }: { go: (view: View) => void }) {
     ['海外精准访问', '38,420', '+18.6%'], ['新增有效询盘', '186', '+24.1%'], ['活跃商机', '42', '+8.3%'], ['预计成交金额', '¥ 286万', '+31.5%'],
   ];
   return <>
-    <PageHeader title="上午好，陈雨晴" desc="关注增长结果，处理今天最重要的工作。" action="新建增长项目" />
+    <PageHeader title="上午好，黔小海" desc="关注增长结果，处理今天最重要的工作。" action="新建增长项目" />
     <div className="stat-grid">{stats.map(s => <Metric key={s[0]} label={s[0]} value={s[1]} change={s[2]} />)}</div>
-    <div className="dashboard-grid">
-      <section className="panel projects-panel">
-        <div className="panel-title"><div><h2>重点项目</h2><p>按商业结果跟踪项目进展</p></div><button onClick={() => go('projects')}>查看全部</button></div>
-        <div className="project-row head"><span>项目</span><span>精准流量</span><span>有效询盘</span><span>商机金额</span><span>健康度</span></div>
-        {[
-          ['贵州抹茶 · 东南亚渠道增长', '26,480', '186', '¥ 486万', '良好'],
-          ['刺梨浓缩汁 · 马来西亚渠道', '9,260', '54', '¥ 216万', '关注'],
-          ['工业轮胎 · 中东经销网络', '6,480', '93', '¥ 842万', '良好'],
-        ].map((row, i) => <button className="project-row clickable" key={row[0]} onClick={() => go('projects')}><span><i className={`project-dot d${i}`}/><strong>{row[0]}</strong></span><span>{row[1]}</span><span>{row[2]}</span><span>{row[3]}</span><span><small className={row[4] === '良好' ? 'good' : 'warn'}>{row[4]}</small></span></button>)}
-      </section>
-      <aside className="panel todo-panel">
-        <div className="panel-title"><div><h2>我的待办</h2><p>跨单元统一处理</p></div><span className="count">12</span></div>
-        {[
-          ['内容审核', '4', '今天 14:00 前', 'content'], ['投流预算审批', '2', '2 个项目', 'traffic'], ['高意向询盘接管', '3', '平均等待 18 分钟', 'inquiries'], ['报价与订单确认', '3', '总金额 ¥ 42.6万', 'customers'],
-        ].map(item => <button className="todo" key={item[0]} onClick={() => go(item[3] as View)}><span className="todo-num">{item[1]}</span><span><strong>{item[0]}</strong><small>{item[2]}</small></span><b>›</b></button>)}
-      </aside>
-    </div>
+    <HomeGlobeShowcase onOpenTodo={go} />
     <section className="panel agent-panel">
       <div className="panel-title"><div><h2>AI 协同动态</h2><p>六位 Agent 嵌入业务单元，首页只汇总结果和待确认动作</p></div><span className="live-dot">6 位在线</span></div>
       <div className="agent-grid">{agents.map(agent => <button className="agent-card" key={agent.name} onClick={() => go(agent.view)}><span className={`agent-avatar ${agent.tone}`}>AI</span><span><strong>{agent.name}</strong><small>{agent.action}</small><em>{agent.unit}</em></span><b>›</b></button>)}</div>
@@ -254,6 +239,7 @@ export default function Home() {
   const [view, setView] = useState<View>('home');
   const [organization, setOrganization] = useState('黔山国际产业集团');
   const [topPanel, setTopPanel] = useState<'organization' | 'search' | 'agents' | 'notifications' | null>(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [unread, setUnread] = useState(3);
   const [pausedAgents, setPausedAgents] = useState<string[]>([]);
@@ -267,17 +253,21 @@ export default function Home() {
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, []);
   useEffect(() => {
-    if (!topPanel) return;
+    if (!topPanel && !mobileMoreOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTopPanel(null);
+      if (event.key === 'Escape') {
+        setTopPanel(null);
+        setMobileMoreOpen(false);
+      }
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [topPanel]);
+  }, [topPanel, mobileMoreOpen]);
   const go = (next: View) => {
     setView(next);
     window.history.replaceState(null, '', `#${next}`);
     setTopPanel(null);
+    setMobileMoreOpen(false);
   };
   const toggleTopPanel = (panel: NonNullable<typeof topPanel>) => setTopPanel(current => current === panel ? null : panel);
   const runtimeAgents = [['内容生产 Agent','正在生成英文规格页'],['渠道分发 Agent','正在同步 LinkedIn'],['询盘接待 Agent','正在整理 4 条询盘'],['客户经营 Agent','正在更新跟进任务'],['收入归因 Agent','正在校验订单归因'],['数据治理 Agent','正在检查字段质量']];
@@ -301,7 +291,7 @@ export default function Home() {
         <p className="nav-section">平台管理</p>
         {([['structure','组织架构','组'],['permissions','权限与账号','权'],['data','数据管理','数'],['security','系统与安全','安']] as [View,string,string][]).map(x=><button key={x[0]} className={view===x[0]||(x[0]==='permissions'&&view==='accounts')?'nav-item active':'nav-item'} onClick={()=>go(x[0])}><span className="nav-mark">{x[2]}</span><span>{x[1]}</span></button>)}
       </nav>
-      <div className="sidebar-footer"><div className="avatar">陈</div><div><strong>陈雨晴</strong><small>集团管理员</small></div><span>···</span></div>
+      <div className="sidebar-footer"><div className="avatar">黔</div><div><strong>黔小海</strong><small>集团管理员</small></div><span>···</span></div>
     </aside>
     <section className="workspace">
       <header className="topbar">
@@ -315,5 +305,13 @@ export default function Home() {
       </header>
       <div className="page" data-view={view}>{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
     </section>
+    <nav className="mobile-nav" aria-label="手机主导航">
+      <button className={view==='home'?'active':''} onClick={()=>go('home')}><span>⌂</span><small>首页</small></button>
+      <button className={['projects','agents','approvals'].includes(view)?'active':''} onClick={()=>go('projects')}><span>任</span><small>任务</small></button>
+      <button className={['content','schedule','distribution','traffic'].includes(view)?'active':''} onClick={()=>go('content')}><span>创</span><small>内容</small></button>
+      <button className={['inquiries','customers','revenue'].includes(view)?'active':''} onClick={()=>go('inquiries')}><span>客</span><small>客户</small></button>
+      <button className={mobileMoreOpen||['structure','permissions','accounts','data','security'].includes(view)?'active':''} aria-expanded={mobileMoreOpen} aria-controls="mobile-more-sheet" onClick={()=>{setTopPanel(null);setMobileMoreOpen(open=>!open)}}><span>•••</span><small>更多</small></button>
+    </nav>
+    {mobileMoreOpen && <><button className="mobile-more-backdrop" aria-label="关闭更多功能" onClick={()=>setMobileMoreOpen(false)}/><section id="mobile-more-sheet" className="mobile-more-sheet" role="dialog" aria-modal="true" aria-label="全部功能"><header><div><strong>全部功能</strong><small>进入二级功能与平台管理</small></div><button aria-label="关闭" onClick={()=>setMobileMoreOpen(false)}>×</button></header><div className="mobile-more-grid">{([['approvals','审批与异常','审'],['schedule','排期与分发','排'],['traffic','广告投放','投'],['revenue','收入归因','收'],['structure','组织架构','组'],['permissions','权限与账号','权'],['data','数据管理','数'],['security','系统与安全','安']] as [View,string,string][]).map(item=><button key={item[0]} className={view===item[0]?'active':''} onClick={()=>go(item[0])}><span>{item[2]}</span><strong>{item[1]}</strong></button>)}</div></section></>}
   </main>;
 }
