@@ -5,8 +5,10 @@
 ## 0. 开始前
 
 - 每位客户使用独立 SQLite 数据库、独立测试邮箱和新的 `runId`；不得复用共享/真实数据数据库。
-- 使用 `APP_ENV=local`、`ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION=true`，设置至少 32 位随机 `AUTH_JWT_SECRET`，并确认 `DEFAULT_ORGANIZATION_ID=org-demo-guikesong`。
-- 先运行 `npm run test:backend:http`。只有退出码为 0，才进入浏览器联调。
+- 首次启动先运行 `npm run build` 和 `npm run build:backend`，然后运行 `npm run start:trial`，浏览器只打开 `http://127.0.0.1:4180`。这个入口会在本机启动前端、后端和同源 `/api` 代理，并在退出时统一停止三个进程。
+- `start:trial` 会强制使用 development、只在本地开启单客户注册，并在没有配置时生成临时 JWT 密钥；默认数据库为 `data/customer-trial.sqlite`。若要隔离不同客户，启动前为每位客户设置不同的 `CUSTOMER_TRIAL_DATABASE_PATH`。
+- 若不用统一入口而是手工拆分启动，则使用 `APP_ENV=local`、`ALLOW_SINGLE_TENANT_TRIAL_REGISTRATION=true`，设置至少 32 位随机 `AUTH_JWT_SECRET`，并确认 `DEFAULT_ORGANIZATION_ID=org-demo-guikesong`。
+- 先运行 `npm run test:backend:http`。只有退出码为 0，才进入浏览器联调；不要直接用 `vinext start` 充当客户试用入口，因为它不会把生产构建里的 `/api` 请求转给 Node 后端。
 - 客户试用空间目前绑定贵州茶演示组织，注册账号会获得 `DEFAULT_NEW_USER_ROLE_ID`。它只允许单客户独立数据库试用，不是多租户生产注册系统；production 即使误设注册开关也必须返回 403。
 
 ## 1. 新用户第一次进入
