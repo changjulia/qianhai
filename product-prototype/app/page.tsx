@@ -139,29 +139,41 @@ function ContentPage() {
 type ContentTask = {id:string;stage:string;title:string;owner:string;meta:string;kind:'normal'|'running'|'attention'|'review'};
 
 const contentTasks:ContentTask[] = [
-  {id:'selection',stage:'待策划',title:'进口商选品清单',owner:'采购经理',meta:'明天',kind:'normal'},
-  {id:'grades',stage:'待策划',title:'抹茶等级指南',owner:'品类经理',meta:'周四',kind:'normal'},
+  {id:'brief',stage:'需求池',title:'马来西亚获客内容需求',owner:'项目经理',meta:'今天',kind:'normal'},
+  {id:'selection',stage:'需求池',title:'进口商选品清单',owner:'采购经理',meta:'明天',kind:'normal'},
+  {id:'persona',stage:'需求池',title:'采购经理关注点清单',owner:'市场策略 Agent',meta:'已就绪',kind:'normal'},
+  {id:'grades',stage:'策划中',title:'抹茶等级指南',owner:'品类经理',meta:'周四',kind:'normal'},
+  {id:'topics',stage:'策划中',title:'进口商高频问题选题',owner:'内容策划 Agent',meta:'12 个选题',kind:'running'},
+  {id:'calendar',stage:'策划中',title:'9 月内容主题规划',owner:'内容经理',meta:'待确认',kind:'normal'},
   {id:'halal',stage:'资料准备',title:'清真认证说明',owner:'质量负责人',meta:'缺少附件',kind:'attention'},
   {id:'capacity',stage:'资料准备',title:'工厂产能证据包',owner:'采购经理',meta:'待确认',kind:'attention'},
-  {id:'factory',stage:'创作中',title:'工厂品质 30 秒视频',owner:'内容生产 Agent',meta:'镜头 3 / 6',kind:'running'},
-  {id:'profit',stage:'创作中',title:'渠道利润政策图文',owner:'经销商老板',meta:'人员编辑',kind:'normal'},
+  {id:'lab',stage:'资料准备',title:'实验室批次检测素材',owner:'素材 Agent',meta:'8 / 10 份',kind:'running'},
+  {id:'script',stage:'脚本分镜',title:'工厂品质视频脚本',owner:'内容生产 Agent',meta:'版本 V1',kind:'normal'},
+  {id:'storyboard',stage:'脚本分镜',title:'6 镜头产能分镜稿',owner:'内容生产 Agent',meta:'已完成',kind:'normal'},
+  {id:'profit',stage:'脚本分镜',title:'渠道利润政策图文',owner:'经销商老板',meta:'人员编辑',kind:'normal'},
+  {id:'factory',stage:'画面制作',title:'工厂品质 30 秒视频',owner:'内容生产 Agent',meta:'镜头 3 / 6',kind:'running'},
+  {id:'application',stage:'画面制作',title:'抹茶饮品应用场景图',owner:'视觉生产 Agent',meta:'4 / 8 张',kind:'running'},
+  {id:'packaging',stage:'画面制作',title:'出口包装规格图',owner:'设计师',meta:'今天 17:00',kind:'normal'},
+  {id:'edit',stage:'合成检查',title:'工厂视频成片合成',owner:'视频合成 Agent',meta:'等待镜头 3',kind:'normal'},
+  {id:'factcheck',stage:'合成检查',title:'技术参数事实检查',owner:'事实核验 Agent',meta:'5 / 6 通过',kind:'attention'},
   {id:'recipe',stage:'待审核',title:'马来语应用配方短片',owner:'品类经理',meta:'今天 14:00',kind:'review'},
   {id:'case',stage:'待审核',title:'500kg 采购案例',owner:'进口商',meta:'今天 16:30',kind:'review'},
+  {id:'spec',stage:'待审核',title:'英文规格书下载页',owner:'法务与品牌',meta:'明天 10:00',kind:'review'},
 ];
 
 function AgentTaskCenter({onWatch,onAction}:{onWatch:()=>void;onAction:(title:string,desc:string)=>void}) {
-  const [selectedId,setSelectedId]=useState('factory');
+  const [selectedId,setSelectedId]=useState<string|null>(null);
   const [filter,setFilter]=useState<'all'|'running'|'attention'|'mine'>('all');
-  const stages=['待策划','资料准备','创作中','待审核'];
-  const selected=contentTasks.find(task=>task.id===selectedId)??contentTasks[4];
+  const stages=['需求池','策划中','资料准备','脚本分镜','画面制作','合成检查','待审核'];
+  const selected=contentTasks.find(task=>task.id===selectedId)??null;
   const shown=contentTasks.filter(task=>filter==='all'||(filter==='running'&&task.kind==='running')||(filter==='attention'&&(task.kind==='attention'||task.kind==='review'))||(filter==='mine'&&['capacity','recipe','profit'].includes(task.id)));
   const selectTask=(task:ContentTask)=>setSelectedId(task.id);
   return <section className="agent-task-center">
-    <div className="task-center-toolbar"><div><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>全部任务</button><button className={filter==='running'?'active':''} onClick={()=>{setFilter('running');setSelectedId('factory')}}><i className="live-dot-mini"/>AI 执行中</button><button className={filter==='attention'?'active attention':''} onClick={()=>{setFilter('attention');setSelectedId('halal')}}>待我处理 <b>2</b></button><button className={filter==='mine'?'active':''} onClick={()=>{setFilter('mine');setSelectedId('capacity')}}>与我相关</button></div><button onClick={()=>onAction('筛选内容任务','可按负责人、截止时间、内容类型和 Agent 执行状态进行筛选。')}>筛选 ⌄</button></div>
-    <div className="task-center-body"><div className="task-flow"><div className="task-columns">{stages.map((stage,index)=><section className="task-stage" key={stage}><header><span>{String(index+1).padStart(2,'0')}</span><strong>{stage}</strong><b>{contentTasks.filter(task=>task.stage===stage).length}</b>{index<stages.length-1&&<i>→</i>}</header><div>{shown.filter(task=>task.stage===stage).map(task=><button key={task.id} className={`${task.kind} ${selected.id===task.id?'selected':''}`} onClick={()=>selectTask(task)}><span className="task-kind">{task.kind==='running'?<><i className="live-dot-mini"/>AI 正在执行</>:task.kind==='attention'?'!需要你介入':task.kind==='review'?'待你审核':task.owner}</span><strong>{task.title}</strong><small>{task.owner} · {task.meta}</small>{task.kind==='running'&&<span className="mini-run-progress"><i><b style={{width:'52%'}}/></i><em>52%</em></span>}</button>)}</div></section>)}</div>{shown.length===0&&<div className="task-empty">当前筛选下没有任务</div>}</div>
-      <aside className={`task-live-inspector ${selected.kind}`}><header><div><span className="inspector-agent"><i/>{selected.kind==='running'?'内容生产 Agent':selected.kind==='attention'?'人工协作节点':'任务详情'}</span><h3>{selected.title}</h3><p>{selected.kind==='running'?'已运行 02:18 · 预计还需 4 分钟':`${selected.owner} · ${selected.meta}`}</p></div>{selected.kind==='running'&&<button onClick={onWatch}>查看完整现场 →</button>}</header>
+    <div className="task-center-toolbar"><div><button className={filter==='all'?'active':''} onClick={()=>{setFilter('all');setSelectedId(null)}}>全部任务</button><button className={filter==='running'?'active':''} onClick={()=>{setFilter('running');setSelectedId(null)}}><i className="live-dot-mini"/>AI 执行中</button><button className={filter==='attention'?'active attention':''} onClick={()=>{setFilter('attention');setSelectedId(null)}}>待我处理 <b>3</b></button><button className={filter==='mine'?'active':''} onClick={()=>{setFilter('mine');setSelectedId(null)}}>与我相关</button></div><button onClick={()=>onAction('筛选内容任务','可按负责人、截止时间、内容类型和 Agent 执行状态进行筛选。')}>筛选 ⌄</button></div>
+    <div className="task-center-body"><div className="task-flow"><div className="task-columns">{stages.map((stage,index)=><section className="task-stage" key={stage}><header><span>{String(index+1).padStart(2,'0')}</span><strong>{stage}</strong><b>{contentTasks.filter(task=>task.stage===stage).length}</b>{index<stages.length-1&&<i>→</i>}</header><div>{shown.filter(task=>task.stage===stage).map(task=><button key={task.id} className={`${task.kind} ${selected?.id===task.id?'selected':''}`} onClick={()=>selectTask(task)}><span className="task-kind">{task.kind==='running'?<><i className="live-dot-mini"/>AI 正在执行</>:task.kind==='attention'?'!需要你介入':task.kind==='review'?'待你审核':task.owner}</span><strong>{task.title}</strong><small>{task.owner} · {task.meta}</small>{task.kind==='running'&&<span className="mini-run-progress"><i><b style={{width:task.id==='factory'?'52%':'68%'}}/></i><em>{task.id==='factory'?'52%':'68%'}</em></span>}</button>)}</div></section>)}</div>{shown.length===0&&<div className="task-empty">当前筛选下没有任务</div>}</div></div>
+    {selected&&<><button className="task-drawer-scrim" aria-label="关闭任务详情" onClick={()=>setSelectedId(null)}/><aside className={`task-live-inspector task-live-drawer ${selected.kind}`}><button className="drawer-close" aria-label="关闭任务详情" onClick={()=>setSelectedId(null)}>×</button><header><div><span className="inspector-agent"><i/>{selected.kind==='running'?'内容生产 Agent':selected.kind==='attention'?'人工协作节点':'任务详情'}</span><h3>{selected.title}</h3><p>{selected.kind==='running'?'已运行 02:18 · 预计还需 4 分钟':`${selected.owner} · ${selected.meta}`}</p></div>{selected.kind==='running'&&<button onClick={onWatch}>查看完整现场 →</button>}</header>
         {selected.kind==='running'?<><section className="current-operation"><span>当前正在做</span><strong>生成「自动化生产线」镜头</strong><p>正在从企业素材库匹配可验证工厂产能的画面，已检查 18 份素材，选中 6 份。</p><div><span><i style={{width:'52%'}}/></span><b>52%</b></div></section><ExecutionSteps/><section className="recent-output"><header><strong>最近产出</strong><span>刚刚更新</span></header><div>{[['脚本 V1','已完成'],['6 镜头分镜稿','可查看'],['镜头 01','可预览'],['镜头 02','可预览']].map(item=><button key={item[0]} onClick={()=>onAction(item[0],'该产出已保存至当前内容任务，可继续预览或查看生成依据。')}><span>▣</span><strong>{item[0]}</strong><small>{item[1]}</small></button>)}</div></section></>:selected.kind==='attention'?<section className="intervention-panel"><span>!　当前阻塞</span><h4>{selected.id==='halal'?'需要补充有效的清真认证附件':'需要确认工厂月产能数据'}</h4><p>完成该操作后，Agent 将自动恢复后续内容生产，无需重新创建任务。</p><button onClick={()=>onAction(selected.id==='halal'?'补充认证资料':'确认产能数据','处理完成后，相关 Agent 任务将自动继续执行。')}>{selected.id==='halal'?'补充资料':'立即确认'} →</button></section>:<section className="task-detail-panel"><span>{selected.kind==='review'?'等待人工审核':'当前任务'}</span><h4>{selected.kind==='review'?'确认事实、品牌表达与对外承诺':'任务按计划推进中'}</h4><p>负责人：{selected.owner}<br/>截止或当前状态：{selected.meta}</p><button onClick={()=>onAction(selected.title,'已载入任务目标、负责人、截止时间、引用资料和完整执行记录。')}>{selected.kind==='review'?'去审核':'查看详情'} →</button></section>}
-      </aside></div>
+      </aside></>}
   </section>;
 }
 
@@ -188,12 +200,6 @@ function LingshuStepCanvas({ step }: { step: number }) {
 function VideoWorkflowCanvas({ step }: { step: number }) {
   const scenes = [['01','贵州高山茶园','航拍建立产地可信感'],['02','鲜叶与原料筛选','展示源头质量控制'],['03','自动化生产线','强调稳定规模供应'],['04','实验室批次检测','呈现可验证的质量记录'],['05','食品级抹茶包装','展示出口就绪状态'],['06','英文规格书 CTA','引导采购经理获取资料']];
   return <div className="video-workflow-canvas"><section className="video-preview"><div className={`preview-frame phase-${step}`}><span>SCENE {Math.min(step+1,6)} / 6</span><div className="preview-visual"><i/><i/><i/></div><strong>{scenes[Math.min(step,5)][1]}</strong><small>{scenes[Math.min(step,5)][2]}</small><button>▶</button></div><div className="preview-track"><i style={{width:`${Math.max(18,(step+1)*16)}%`}}/></div><div className="preview-meta"><span>00:{String(Math.min(30,(step+1)*5)).padStart(2,'0')} / 00:30</span><span>1080 × 1920 · 英文</span></div></section><section className="scene-panel"><header><strong>视频分镜</strong><span>6 个镜头 · 30 秒</span></header>{scenes.map((s,i)=><div key={s[0]} className={i<step?'ready':i===step?'generating':''}><span>{i<step?'✓':s[0]}</span><p><strong>{s[1]}</strong><small>{s[2]}</small></p><em>{i<step?'已生成':i===step?'生成中…':'等待'}</em></div>)}</section></div>;
-}
-
-function ReviewWorkbench() {
-  const [selected,setSelected]=useState(0); const [dialog,setDialog]=useState<string|null>(null);
-  const rows=[['工厂品质 30 秒视频','事实与技术参数','高'],['经销合作政策图文','商务承诺','高'],['马来语应用配方短片','本地化表达','中']];
-  return <><div className="review-workbench"><aside><div className="review-queue-head"><strong>待我审核</strong><span>7</span></div>{rows.map((r,i)=><button key={r[0]} className={i===selected?'active':''} onClick={()=>setSelected(i)}><span className="review-icon">{i+1}</span><span><strong>{r[0]}</strong><small>{r[1]} · {r[2]}风险</small></span></button>)}</aside><article><div className="review-doc-head"><div><small>LinkedIn · 英文内容</small><h3>{rows[selected][0]}</h3></div><span>版本 3</span></div><p>Built for consistency at scale. Our production combines controlled sourcing, batch-level quality records and export-ready specifications.</p><div className="claim-check"><strong>事实核验</strong><span className="checked">✓ 产地描述已引用产品手册</span><span className="checked">✓ 批次记录已引用质检流程</span><span className="warning">! 关键参数待负责人确认</span></div><footer><button onClick={()=>setDialog('退回修改')}>退回修改</button><button onClick={()=>setDialog('补充批注')}>补充批注</button><button className="approve" onClick={()=>setDialog('确认通过并进入排期')}>确认通过并进入排期</button></footer></article></div>{dialog&&<ActionDialog title={dialog} desc={`对“${rows[selected][0]}”执行此审核动作，结果将记入行动账本。`} onClose={()=>setDialog(null)}/>}</>;
 }
 
 function SchedulePage() {
