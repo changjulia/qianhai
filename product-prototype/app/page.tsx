@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PlatformManagementPage, type PlatformView } from './components/platform-management';
 import { Metric, PageHeader, Tabs } from './components/shared-ui';
 
 type View = 'home' | 'projects' | 'agents' | 'approvals' | 'content' | 'schedule' | 'distribution' | 'traffic' | 'inquiries' | 'customers' | 'revenue' | 'structure' | 'permissions' | 'accounts' | 'data' | 'security';
 type SourceView = '全部' | '人员创建' | '数字员工执行' | '待我处理';
+
+const demoViews: View[] = ['home', 'projects', 'agents', 'approvals', 'content', 'schedule', 'distribution', 'traffic', 'inquiries', 'customers', 'revenue', 'structure', 'permissions', 'accounts', 'data', 'security'];
 
 const agents = [
   { name: '市场策略 Agent', action: '完成马来西亚市场路径建议', unit: '项目管理', view: 'projects' as View, tone: 'blue' },
@@ -250,7 +252,19 @@ function Attribution(){return <div className="attribution"><div><span>首次触�
 
 export default function Home() {
   const [view, setView] = useState<View>('home');
-  const go = (next: View) => setView(next);
+  useEffect(() => {
+    const syncFromHash = () => {
+      const hashView = window.location.hash.slice(1) as View;
+      if (demoViews.includes(hashView)) setView(hashView);
+    };
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, []);
+  const go = (next: View) => {
+    setView(next);
+    window.history.replaceState(null, '', `#${next}`);
+  };
   return <main className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-logo">黔</span><div><strong>黔海</strong><small>Global Growth OS</small></div></div>
@@ -273,7 +287,7 @@ export default function Home() {
     </aside>
     <section className="workspace">
       <header className="topbar"><div><span className="crumb">黔山国际产业集团</span><button className="switcher">切换组织⌄</button></div><div className="top-actions"><button className="search">搜索项目、内容或客户</button><button className="agent-status">AI · 6 位运行中</button><button className="notice">3</button></div></header>
-      <div className="page">{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<PlatformManagementPage view={view as PlatformView}/>}</div>
+      <div className="page" data-view={view}>{view==='home'?<HomePage go={go}/>:view==='projects'?<ProjectsPage/>:view==='agents'?<AgentsPage/>:view==='approvals'?<ApprovalsPage/>:view==='content'?<ContentPage/>:view==='schedule'?<SchedulePage/>:view==='distribution'?<DistributionPage/>:view==='traffic'?<TrafficPage/>:view==='inquiries'?<InquiriesPage go={go}/>:view==='customers'?<CustomersPage go={go}/>:view==='revenue'?<RevenuePage/>:<PlatformManagementPage key={view} view={view as PlatformView}/>}</div>
     </section>
   </main>;
 }
