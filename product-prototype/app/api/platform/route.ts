@@ -148,7 +148,7 @@ async function snapshot(database: D1Database, organization: RequestContext['orga
   const syncRuns = rows(6);
   const qualityIssues = rows(7);
   const auditEvents = rows(9);
-  const connected = integrations.filter((item) => item.status === 'connected').length;
+  const connected = integrations.filter((item) => item.status === 'connected' || item.status === 'demo_ready').length;
   const needsConfiguration = integrations.filter((item) => item.status === 'needs_configuration').length;
   const completedSyncRuns = syncRuns.filter((item) => item.status === 'success' || item.status === 'failed');
   const unsupportedSyncRuns = syncRuns.filter((item) => item.status === 'unsupported').length;
@@ -196,11 +196,11 @@ async function snapshot(database: D1Database, organization: RequestContext['orga
       queuedSyncRuns,
       openQualityCount,
       policiesEnabled: rows(8).filter((item) => Number(item.enabled) === 1).length,
-      highRiskOpen: auditEvents.filter((item) => item.risk_level === 'high' && !item.disposition).length,
+      highRiskOpen: auditEvents.filter((item) => item.risk_level === 'high' && item.result !== 'success' && !item.disposition).length,
     },
     health: [
       { id: 'api', name: 'Web 应用与 API', metric: 'D1 查询成功', status: 'healthy', label: '正常' },
-      { id: 'connectors', name: '数据连接器', metric: `${connected} 已连接 · ${needsConfiguration} 待配置`, status: needsConfiguration ? 'warning' : 'healthy', label: needsConfiguration ? '需要配置' : '正常' },
+      { id: 'connectors', name: '数据连接器', metric: `${connected} 可用 · ${needsConfiguration} 待配置`, status: needsConfiguration ? 'warning' : 'healthy', label: needsConfiguration ? '需要配置' : '正常' },
       {
         id: 'sync',
         name: '同步运行',
