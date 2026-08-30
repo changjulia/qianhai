@@ -198,6 +198,31 @@ function ProjectDetail({ tab }: { tab: string }) {
 type DimensionKey='market'|'audience'|'result';
 type DimensionFilters=Record<DimensionKey,string[]>;
 
+type FinishedCreation = {
+  id:string;
+  title:string;
+  language:string;
+  ratio:string;
+  duration:string;
+  src:string;
+};
+
+const finishedCreations:FinishedCreation[]=[
+  {id:'v1-en',title:'From Origin to Your Market',language:'英语',ratio:'16:9',duration:'00:24',src:'/demo/generated-videos/v1-en-concept-preview.mp4'},
+  {id:'v2-ar',title:'من المصدر إلى سوقك',language:'阿拉伯语',ratio:'16:9',duration:'00:29',src:'/demo/generated-videos/v2-ar-concept-preview.mp4'},
+  {id:'v3-es',title:'Del origen a tu marca',language:'西班牙语',ratio:'9:16',duration:'00:25',src:'/demo/generated-videos/v3-es-concept-preview.mp4'},
+];
+
+function MyFinishedCreations({onBack}:{onBack:()=>void}){
+  return <section className="my-finished-creations">
+    <header className="finished-creations-head"><div><button onClick={onBack}>← 返回内容工作台</button><span>我的创作 / 成片</span><h1>已生成成片</h1><p>先在这里预览和下载；确认无误后再进入正式发布流程。</p></div><strong>{finishedCreations.length} 个成片</strong></header>
+    <div className="finished-creation-grid">{finishedCreations.map(item=><article key={item.id} className={item.ratio==='9:16'?'portrait':''}>
+      <div className="finished-video-shell"><video src={item.src} controls playsInline preload="metadata" aria-label={`${item.language}成片：${item.title}`}/><span>概念样片 · 开放许可行业素材</span></div>
+      <div className="finished-creation-info"><span>{item.language} · {item.ratio} · {item.duration}</span><h2>{item.title}</h2><p>状态：待人工验收。该视频不作为特定贵州工厂能力、客户或出口业绩证明。</p><div><a href={item.src} download>下载成片</a><a href="/demo/generated-videos/README.md" target="_blank" rel="noreferrer">查看素材与许可说明</a></div></div>
+    </article>)}</div>
+  </section>;
+}
+
 function ContentPage({go}:{go:(view:View)=>void}) {
   const [dialog, setDialog] = useState<{title:string;desc:string}|null>(null);
   const [showCreate,setShowCreate]=useState(false);
@@ -206,14 +231,16 @@ function ContentPage({go}:{go:(view:View)=>void}) {
   const [editingDimension,setEditingDimension]=useState<DimensionKey|null>(null);
   const [dimensionFilters,setDimensionFilters]=useState<DimensionFilters>({market:[],audience:[],result:[]});
   const [createdTask,setCreatedTask]=useState<ContentTask|null>(null);
+  const [showCreations,setShowCreations]=useState(false);
   const [project] = useState(PROJECTS.matcha.name);
   const dimensionsConfirmed=(['market','audience','result'] as DimensionKey[]).every(key=>dimensionFilters[key].length>0);
   const dimensionLabel=(key:DimensionKey)=>dimensionFilters[key].length===0?'不限':dimensionFilters[key].length===1?dimensionFilters[key][0]:`${dimensionFilters[key][0]} +${dimensionFilters[key].length-1}`;
   const campaign = dimensionsConfirmed?`${dimensionLabel('market')} · ${dimensionLabel('audience')} · ${dimensionLabel('result')}`:'内容生产与交付工作台';
+  if(showCreations)return <MyFinishedCreations onBack={()=>setShowCreations(false)}/>;
   return <>
     <header className="content-command-head">
       <div><span className="content-breadcrumb">经营项目　/　{project}</span><h1>{campaign}</h1><div className="campaign-dimensions">{([['market','地区'],['result','经营目标'],['audience','目标用户']] as [DimensionKey,string][]).map(([key,label])=><button key={key} className={dimensionFilters[key].length?'filtered':''} onClick={()=>setEditingDimension(key)}><span>{label}</span><strong>{dimensionLabel(key)}</strong><i>{dimensionFilters[key].length?'调整':'设置'}</i></button>)}</div></div>
-      <div className="content-head-actions"><button className="boundary-entry" onClick={()=>setShowBoundary(true)}><span>◈</span> 行动边界 <b>3</b></button><button className="primary" onClick={()=>setShowCreate(true)}>＋ 新建交付单</button></div>
+      <div className="content-head-actions"><button className="finished-entry" onClick={()=>setShowCreations(true)}>我的创作 · 成片 <b>3</b></button><button className="boundary-entry" onClick={()=>setShowBoundary(true)}><span>◈</span> 行动边界 <b>3</b></button><button className="primary" onClick={()=>setShowCreate(true)}>＋ 新建交付单</button></div>
     </header>
     <AgentTaskCenter createdTask={createdTask} dimensionFilters={dimensionFilters} onSchedule={()=>go('schedule')} onAction={(title,desc)=>setDialog({title,desc})}/>
     {showCreate&&<CreateDeliveryModal onClose={()=>setShowCreate(false)} onCreate={task=>{setCreatedTask(task);setShowCreate(false);setDialog({title:'交付单已创建',desc:`“${task.title}”已加入待启动，执行方式为${task.executor}，已关联批量素材与原始需求。`})}}/>}
